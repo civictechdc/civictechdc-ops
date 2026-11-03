@@ -1,0 +1,252 @@
+{
+  "retrieved_at_utc": "2026-11-03T16:27:05.957639+00:00",
+  "scope": "Official documentation only; no live account/API response verification. Projections are not full schema copies.",
+  "sources": [
+    {
+      "url": "https://docs.luma.com/reference/get_v1-calendars-get.md",
+      "sha256_of_retrieved_markdown": "bca84cb2346ce84d9d56e0e34ee32da1414bfd0eee6e8047339a8a8544bd1480",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/v1/calendars/get",
+          "parameters": [],
+          "response_ref": "#/components/schemas/AdminCalendar",
+          "response_top_level_properties": []
+        }
+      ]
+    },
+    {
+      "url": "https://docs.luma.com/reference/get_v1-calendars-events-list.md",
+      "sha256_of_retrieved_markdown": "a9da39c979d44e877aed3ff6bb50f6eb8897adae16c25aa81c0b799eb01642ba",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/v1/calendars/events/list",
+          "parameters": [
+            "before",
+            "after",
+            "pagination_cursor",
+            "pagination_limit",
+            "platforms",
+            "sort_column",
+            "sort_direction",
+            "status",
+            "access"
+          ],
+          "response_ref": null,
+          "response_top_level_properties": [
+            "entries",
+            "has_more",
+            "next_cursor"
+          ],
+          "CalendarEvent": {
+            "properties": [],
+            "combinations": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Event"
+                },
+                {
+                  "$ref": "#/components/schemas/ExternalEvent"
+                }
+              ]
+            }
+          },
+          "Event": {
+            "properties": [],
+            "combinations": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventForView"
+                },
+                {
+                  "$ref": "#/components/schemas/EventForManage"
+                }
+              ]
+            }
+          },
+          "ExternalEvent": {
+            "properties": [
+              "platform",
+              "id",
+              "calendar_id",
+              "start_at",
+              "duration_interval",
+              "end_at",
+              "created_at",
+              "timezone",
+              "name",
+              "geo_address_json",
+              "coordinate",
+              "url",
+              "host"
+            ],
+            "combinations": {}
+          },
+          "EventForView": {
+            "properties": [
+              "platform",
+              "id",
+              "user_id",
+              "calendar_id",
+              "start_at",
+              "duration_interval",
+              "end_at",
+              "created_at",
+              "timezone",
+              "name",
+              "cover_url",
+              "url",
+              "visibility",
+              "location_type",
+              "location_visibility",
+              "waitlist_status",
+              "registration_open",
+              "require_approval",
+              "spots_remaining",
+              "display_price",
+              "access",
+              "geo_address_json",
+              "coordinate"
+            ]
+          },
+          "EventForManage": {
+            "properties": [
+              "platform",
+              "id",
+              "user_id",
+              "calendar_id",
+              "start_at",
+              "duration_interval",
+              "end_at",
+              "created_at",
+              "timezone",
+              "name",
+              "geo_address_json",
+              "coordinate",
+              "meeting_url",
+              "location_type",
+              "location_visibility",
+              "cover_url",
+              "registration_questions",
+              "url",
+              "visibility",
+              "waitlist_status",
+              "registration_open",
+              "require_approval",
+              "max_capacity",
+              "can_register_for_multiple_tickets",
+              "spots_remaining",
+              "display_price",
+              "feedback_email",
+              "access"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://docs.luma.com/reference/get_v1-events-get.md",
+      "sha256_of_retrieved_markdown": "a073565f919c32d41108f8b96865e4ab229cfa4c39e8ebacda61607de4d58196",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/v1/events/get",
+          "parameters": [
+            "event_id"
+          ],
+          "response_ref": "#/components/schemas/EventDetail",
+          "response_top_level_properties": [],
+          "response_variants": {
+            "EventDetailForView": [
+              "platform",
+              "id",
+              "user_id",
+              "calendar_id",
+              "start_at",
+              "duration_interval",
+              "end_at",
+              "created_at",
+              "timezone",
+              "name",
+              "cover_url",
+              "url",
+              "visibility",
+              "location_type",
+              "location_visibility",
+              "waitlist_status",
+              "registration_open",
+              "require_approval",
+              "spots_remaining",
+              "display_price",
+              "access",
+              "geo_address_json",
+              "coordinate",
+              "description",
+              "description_md",
+              "hosts"
+            ],
+            "EventDetailForManage": [
+              "platform",
+              "id",
+              "user_id",
+              "calendar_id",
+              "start_at",
+              "duration_interval",
+              "end_at",
+              "created_at",
+              "timezone",
+              "name",
+              "geo_address_json",
+              "coordinate",
+              "meeting_url",
+              "location_type",
+              "location_visibility",
+              "cover_url",
+              "registration_questions",
+              "url",
+              "visibility",
+              "waitlist_status",
+              "registration_open",
+              "require_approval",
+              "max_capacity",
+              "can_register_for_multiple_tickets",
+              "spots_remaining",
+              "display_price",
+              "feedback_email",
+              "access",
+              "description",
+              "description_md",
+              "confirmation_email_md",
+              "pending_approval_email_md",
+              "declined_email_md",
+              "hosts",
+              "guest_counts",
+              "tax_config"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://docs.luma.com/reference/get_v1-calendars-events-lookup.md",
+      "sha256_of_retrieved_markdown": "0cd185e6e18dfcb700f2217ddbeb543a93675922a4a1ba4dbd9d5e241dff0632",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/v1/calendars/events/lookup",
+          "parameters": [
+            "platform",
+            "url",
+            "event_id",
+            "event_api_id"
+          ],
+          "response_ref": null,
+          "response_top_level_properties": [
+            "event"
+          ]
+        }
+      ]
+    }
+  ]
+}

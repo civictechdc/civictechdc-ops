@@ -1,0 +1,73 @@
+{
+  "name": "Civic Hack DC REPLACE_YEAR: REPLACE_THEME",
+  "start_at": "REPLACE_START_UTC",
+  "end_at": "REPLACE_END_UTC",
+  "timezone": "America/New_York",
+  "visibility": "private",
+  "show_guest_list": false,
+  "max_capacity": "REPLACE_MAX_CAPACITY",
+  "waitlist_status": "enabled",
+  "name_requirement": "first-last",
+  "reminders_disabled": true,
+  "geo_address_json": {
+    "type": "google",
+    "place_id": "REPLACE_PLACE_ID"
+  },
+  "description_md": "REPLACE_APPROVED_DESCRIPTION\n\nVenue: REPLACE_VENUE_NAME\nSchedule: REPLACE_CONFIRMED_SCHEDULE\nAccessibility and participation details: REPLACE_CONFIRMED_ACCESS_DETAILS",
+  "registration_questions": [
+    {
+      "id": "q1",
+      "label": "What is your primary role?",
+      "required": true,
+      "question_type": "dropdown",
+      "options": [
+        "Software Engineer / Developer",
+        "Data Scientist / Analyst",
+        "Designer / UX",
+        "Product Manager",
+        "Policy / Subject Matter Expert",
+        "Student",
+        "Other"
+      ]
+    },
+    {
+      "id": "q2",
+      "label": "Do you already have a team, or would you like to join one?",
+      "required": true,
+      "question_type": "dropdown",
+      "options": [
+        "I have a team",
+        "Looking to join a team",
+        "Open to either"
+      ]
+    },
+    {
+      "id": "q3",
+      "label": "What is your experience level?",
+      "required": false,
+      "question_type": "dropdown",
+      "options": [
+        "Beginner",
+        "Intermediate",
+        "Advanced",
+        "Expert"
+      ]
+    },
+    {
+      "id": "q6",
+      "label": "I agree to the [Code of Conduct](https://www.civictechdc.org/code-of-conduct)",
+      "required": true,
+      "question_type": "agree-check"
+    }
+  ],
+  "_template_notes": {
+    "status": "draft_requires_owner_review",
+    "review_required": [
+      "Confirm a future date and exact America/New_York timezone conversion, including DST transitions.",
+      "Confirm venue, place ID, capacity, accessibility and any food commitments.",
+      "Confirm description, links, contact, program, registration necessity and privacy preferences.",
+      "Confirm notification behavior and current API schema separately; this file is not an approved API payload."
+    ],
+    "draft_type": "Hackathon"
+  }
+}

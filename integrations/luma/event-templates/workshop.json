@@ -1,0 +1,53 @@
+{
+  "name": "REPLACE_WORKSHOP_TITLE",
+  "start_at": "REPLACE_START_UTC",
+  "end_at": "REPLACE_END_UTC",
+  "timezone": "America/New_York",
+  "visibility": "private",
+  "show_guest_list": false,
+  "max_capacity": "REPLACE_MAX_CAPACITY",
+  "waitlist_status": "enabled",
+  "name_requirement": "first-last",
+  "reminders_disabled": true,
+  "geo_address_json": {
+    "type": "google",
+    "place_id": "REPLACE_PLACE_ID"
+  },
+  "description_md": "REPLACE_APPROVED_DESCRIPTION\n\nVenue: REPLACE_VENUE_NAME\nSchedule: REPLACE_CONFIRMED_SCHEDULE\nAccessibility and participation details: REPLACE_CONFIRMED_ACCESS_DETAILS",
+  "registration_questions": [
+    {
+      "id": "q1",
+      "label": "What is your skill level with this topic?",
+      "required": true,
+      "question_type": "dropdown",
+      "options": [
+        "Beginner",
+        "Intermediate",
+        "Advanced",
+        "Just curious"
+      ]
+    },
+    {
+      "id": "q2",
+      "label": "What do you hope to learn from this workshop?",
+      "required": false,
+      "question_type": "long-text"
+    },
+    {
+      "id": "q4",
+      "label": "I agree to the [Code of Conduct](https://www.civictechdc.org/code-of-conduct)",
+      "required": true,
+      "question_type": "agree-check"
+    }
+  ],
+  "_template_notes": {
+    "status": "draft_requires_owner_review",
+    "review_required": [
+      "Confirm a future date and exact America/New_York timezone conversion, including DST transitions.",
+      "Confirm venue, place ID, capacity, accessibility and any food commitments.",
+      "Confirm description, links, contact, program, registration necessity and privacy preferences.",
+      "Confirm notification behavior and current API schema separately; this file is not an approved API payload."
+    ],
+    "draft_type": "Workshop / Clinic"
+  }
+}
