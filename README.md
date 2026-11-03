@@ -1,26 +1,41 @@
-# Civic Tech DC operations resources
+# Civic Tech DC support library
 
-Draft workflows, event templates, and small tools for volunteer-led civic-tech
-operations.
+The central, version-controlled home for reusable **skills, tools, institutional
+knowledge, templates, and workflows for supporting Civic Tech DC**.
 
-**These are working resources, not adopted organizational policy or a promise
-of services.** Publishing this repository does not approve a workflow, designate
-a spokesperson, authorize external actions, or connect an account.
+This is a shared library for volunteers, organizers, and assistants—not just a
+recovery snapshot or one assistant's memory. Save useful, public-safe knowledge
+here so people can find it, improve it, and carry work forward.
 
-## Contents
+## Find what you need
 
-- [Working principles](knowledge/organizational-context.md): user involvement,
-  realistic volunteer capacity, continuity, and human decisions.
-- [Media-request workflow](knowledge/media-request-workflow.md): an explicitly
-  unapproved intake, review, response, and recordkeeping draft.
-- [Luma read-only helper](integrations/luma/README.md): dry-run by default,
-  explicit live-read safeguards, and network-isolated offline tests.
-- [Event template drafts](integrations/luma/event-templates/README.md): five
-  incomplete, privacy-conservative starting points for organizer review.
-- [Website-work reference](reference/website-workflow.md): a manual checklist
-  that defers to the website repository's current source and guidance.
+Start with the **[resource catalog](CATALOG.md)**.
 
-## Start safely
+| Section | What belongs here |
+| --- | --- |
+| [Knowledge](knowledge/README.md) | Organizational context, verified lessons, decision records, and references. |
+| [Skills](skills/README.md) | Reusable procedures for doing a bounded support task. |
+| [Tools](tools/README.md) | Tool purpose, usage, limitations, and orchestration patterns. |
+| [Templates](templates/README.md) | Starting points for project briefs, tasks, decisions, and events. |
+| [Workflows](workflows/README.md) | End-to-end processes, handoffs, and human approval points. |
+| [Integrations](integrations/luma/README.md) | Service adapters, code, safe configuration examples, and tests—never credentials. |
+| [Reference](reference/website-workflow.md) | Supporting guides and links to maintained sources elsewhere. |
+
+Keep one canonical copy of each resource. The category indexes link to existing
+files where appropriate rather than creating competing copies.
+
+## Use and contribute
+
+1. Search the catalog before creating something new.
+2. Read the resource's status, sources, limits, and required approvals.
+3. Use an existing template or skill for a small, clearly bounded task.
+4. Save reusable improvements or verified lessons back here, with context and
+   a review date. Update the catalog in the same change.
+
+See [Contributing](CONTRIBUTING.md) and the
+[resource guide](docs/RESOURCE-GUIDE.md) for placement and review expectations.
+
+## Try the existing read-only tool
 
 From this checkout:
 
@@ -38,24 +53,29 @@ network isolation. See the integration README for dependencies and limitations.
 No write commands, event publishing, guest exports, invitations, scheduled jobs,
 or automatic account connections are included.
 
-## Privacy and approval
+## Shared knowledge is not blanket permission
 
-Use synthetic examples in public issues and pull requests. Do not commit
-credentials, participant records, private correspondence, private schedules or
-addresses, internal audit records, or personal profiles.
+This repository is public. Do not save credentials, participant records, private
+correspondence, private schedules or addresses, internal audit records, or
+personal profiles here. Restricted records belong in separately controlled
+systems, not a hidden folder or an earlier Git commit in this repository.
 
-Actual event dates, venues, accessibility arrangements, project status,
-partnerships, public statements, and permissions require current confirmation.
-An event template is not a booking or approved API payload. A passing offline
-test is not proof of live API compatibility.
+Publishing a resource does not adopt a policy, designate a spokesperson, approve
+an event, connect an account, or authorize external actions. Drafts and
+experimental tools remain labeled. Actual dates, venues, accessibility
+arrangements, project states, public claims, and permissions require current
+confirmation. A passing offline test does not prove live API compatibility.
 
-See [Contributing](CONTRIBUTING.md) and the
-[publication scope](docs/PUBLICATION.md).
+The website, playbook, project repositories, and responsible people remain the
+sources for their own current facts and decisions; link to them rather than
+silently copying or overruling them. See the
+[publication boundary](docs/PUBLICATION.md).
 
 ## Status
 
-Prepared November 3, 2026. Luma documentation routes were reviewed, but no live
-account qualification is claimed. No workflow here should be represented as
-official policy without separate human approval.
+Established November 3, 2026. The initial collection includes draft support
+procedures, event templates, website guidance, and an experimental Luma helper.
+It can grow as additional material is reviewed; it is not a complete inventory
+of connected services or approved organizational policy.
 
 License selection is pending; no license grant is added by this draft.

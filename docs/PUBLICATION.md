@@ -1,9 +1,10 @@
-# Public snapshot scope
+# Publication and privacy boundary
 
-Prepared for public sharing on November 3, 2026.
+The support library was established for public sharing on November 3, 2026.
+It is an ongoing collection, not a frozen migration export.
 
-This is a selected, independently initialized snapshot, not a mirror of a
-private recovery workspace or its Git history.
+Its initial collection used a selected, independently initialized snapshot,
+not a mirror of a private recovery workspace or its Git history.
 
 ## Included
 
@@ -11,6 +12,8 @@ private recovery workspace or its Git history.
 - A dry-run-by-default, GET-only Luma helper and synthetic offline tests.
 - Incomplete event-template drafts with placeholders and privacy-first defaults.
 - Public-documentation contract metadata and a manual website-work checklist.
+- Additional public-safe skills, tools, knowledge, templates, and workflows as
+  they are reviewed and added through the contribution process.
 
 ## Excluded
 
@@ -21,9 +24,14 @@ private recovery workspace or its Git history.
   unverified accomplishments, private correspondence, and old account details.
 - The private workspace's commit history and any deployment automation.
 
-The public copy has its own history. Do not merge private recovery history into
-this repository later. Review additions for privacy even when they contain no
-recognizable credential patterns.
+The public library has its own history. Do not merge private recovery history
+into this repository later. A private recovery archive is not a second active
+library and is not automatically synchronized with this one. Review additions
+for privacy even when they contain no recognizable credential patterns.
+
+Institutional knowledge can include verified public facts and actual public
+decisions, not just drafts. Verification and policy approval are different:
+record sources and review dates, and never infer approval from publication.
 
 Local tests use synthetic credentials and a non-forwarding curl replacement in
 an isolated network namespace. They establish local behavior only. Live API

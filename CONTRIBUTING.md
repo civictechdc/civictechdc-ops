@@ -3,11 +3,16 @@
 Small, reviewable improvements are welcome. Keep volunteer time, accessibility,
 privacy, and maintenance burden in mind.
 
-1. Describe the problem and the smallest useful change.
+1. Search [the catalog](CATALOG.md), describe the problem, and choose the
+   smallest useful change. Reuse or link an existing resource before duplicating
+   it. Use the [resource guide](docs/RESOURCE-GUIDE.md) for placement.
 2. Use public sources or synthetic data; do not post private participant or
    organizational records in issues, tests, logs, or pull requests.
-3. Keep proposed policy and event copy clearly marked **draft** until an
-   authorized human approves them.
+3. Include purpose, status, sources/provenance, last review date, limitations,
+   and any approval requirements. Name a maintaining role if one has agreed;
+   otherwise say it is unassigned. Keep proposed policy and event copy clearly
+   marked **draft** until an authorized human approves them. Update the catalog
+   and relevant category index in the same change.
 4. Preserve the Luma helper's dry-run default and narrow read-only scope.
    Credential handling, new endpoints, writes, guest-data access, notifications,
    and external services require separate review.
