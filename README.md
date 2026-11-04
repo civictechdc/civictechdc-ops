@@ -18,7 +18,7 @@ Start with the **[resource catalog](CATALOG.md)**.
 | [Tools](tools/README.md) | Tool purpose, usage, limitations, and orchestration patterns. |
 | [Templates](templates/README.md) | Starting points for project briefs, tasks, decisions, and events. |
 | [Workflows](workflows/README.md) | End-to-end processes, handoffs, and human approval points. |
-| [Integrations](integrations/luma/README.md) | Service adapters, code, safe configuration examples, and tests—never credentials. |
+| [Integrations](integrations/README.md) | Service adapters, code, safe setup references, and tests—never credentials. |
 | [Reference](reference/website-workflow.md) | Supporting guides and links to maintained sources elsewhere. |
 
 Keep one canonical copy of each resource. The category indexes link to existing

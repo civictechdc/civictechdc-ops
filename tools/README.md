@@ -11,6 +11,9 @@ credential store, or live inventory of connected accounts.
 - [Luma helper](../integrations/luma/README.md) — experimental GET-only CLI,
   dry-run by default, with isolated offline tests. Live account access is
   unqualified and requires separate authorization.
+- [Slack integration plan](../integrations/slack/README.md) — proposed
+  mention-only pilot, access boundaries, and setup references; not implemented
+  or connected.
 
 Keep service-specific code, safe configuration examples, and tests together
 under `integrations/<service>/`. Tool guides should link there rather than

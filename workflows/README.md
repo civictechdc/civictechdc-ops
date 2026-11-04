@@ -14,6 +14,8 @@ into policy.
   authorized content/code change, deferring to current website guidance.
 - [Support-tool orchestration](../tools/orchestration.md) — reference pattern
   for moving from a bounded request to review and reusable knowledge.
+- [Slack support pilot](../integrations/slack/README.md) — proposed Slack intake
+  and controlled task handoff; not implemented or connected.
 
 These links point to one canonical copy of each resource. None creates a
 schedule, sends a message, installs a skill, or grants publishing permission.

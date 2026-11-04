@@ -1,0 +1,67 @@
+{
+  "retrieved_at_utc": "2026-11-04T00:00:12.767427+00:00",
+  "verification_method": "Direct HTTPS retrieval and inspection of official public Slack documentation. No Slack data API, workspace, account credentials, or live integration tested.",
+  "scope": "Documentation provenance only; not a complete contract, approval, or compatibility guarantee.",
+  "sources": [
+    {
+      "url": "https://docs.slack.dev/apis/events-api/using-socket-mode/",
+      "final_url": "https://docs.slack.dev/apis/events-api/using-socket-mode/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "81619418af2fd28309a1c24c3afb5417e0df181f8fd7abd6a8639bc90cb59027"
+    },
+    {
+      "url": "https://docs.slack.dev/reference/scopes/app_mentions.read/",
+      "final_url": "https://docs.slack.dev/reference/scopes/app_mentions.read/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "4e961a0f831ce0c6fd32eaa896ff8f1c7bc6c360e711f1428cc9117afc79e511"
+    },
+    {
+      "url": "https://docs.slack.dev/reference/scopes/connections.write/",
+      "final_url": "https://docs.slack.dev/reference/scopes/connections.write/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "959ec9dd9b402c5a427798fea50bb29b8a5f99f2931de91d6207db67ad5b4d41"
+    },
+    {
+      "url": "https://docs.slack.dev/reference/events/app_mention/",
+      "final_url": "https://docs.slack.dev/reference/events/app_mention/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "833d698b7a8f7cbd9c3f5ab110be5acb05fb66d1d271ff8798653cd0f504a5c1"
+    },
+    {
+      "url": "https://docs.slack.dev/reference/methods/chat.postMessage/",
+      "final_url": "https://docs.slack.dev/reference/methods/chat.postMessage/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "493bd24b9978432cf40e1cb80767b59e7c6c56e3c29e5514e67de9ba6e08f082"
+    },
+    {
+      "url": "https://docs.slack.dev/reference/events/message.channels/",
+      "final_url": "https://docs.slack.dev/reference/events/message.channels/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "60bfdf1ec300f722f33ed15673d87e8f99875625a36c00969726cfb3521e056c"
+    },
+    {
+      "url": "https://docs.slack.dev/reference/events/message.groups/",
+      "final_url": "https://docs.slack.dev/reference/events/message.groups/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "1a999130d7d93c73575bd0e34b481d0b5be8839bef0f9cedff4a63b21b6807d7"
+    },
+    {
+      "url": "https://docs.slack.dev/app-management/distribution/",
+      "final_url": "https://docs.slack.dev/app-management/distribution/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "e0be0f126abdf6e017d308dce21d4aa7d08a677c719a8be6679a88c939e228ca"
+    },
+    {
+      "url": "https://docs.slack.dev/ai/slack-mcp-server/",
+      "final_url": "https://docs.slack.dev/ai/slack-mcp-server/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "944bee9605f0b10690176b79fbc8ac49ca3f77d4a054f752d328c2284f8950f4"
+    },
+    {
+      "url": "https://docs.slack.dev/ai/slack-mcp-server/developing/",
+      "final_url": "https://docs.slack.dev/ai/slack-mcp-server/developing/",
+      "http_status": 200,
+      "sha256_of_retrieved_html": "f19443cb69110e2067cb206da4ed69407bceab20b73d5825c50e85b24b43c55e"
+    }
+  ]
+}

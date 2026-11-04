@@ -10,6 +10,7 @@ The resource itself contains its scope, sources, and approval requirements.
 | [Project steward](skills/project-steward.md) | Skill | Draft; not installed | Preparing a bounded project brief, next-step proposal, or handoff. |
 | [Orchestration pattern](tools/orchestration.md) | Tool guide | Reference; deployment-specific | Understanding the roles of the task board, assistant/worker, and shared library. |
 | [Luma helper](integrations/luma/README.md) | Integration/tool | Experimental; live account unqualified | Previewing read requests and, with separate authorization, reading limited event data. |
+| [Slack integration plan](integrations/slack/README.md) | Integration/workflow | Proposal; not implemented or connected | Planning a mention-only support pilot and a separately controlled task handoff. |
 | [Project brief](templates/project-brief.md) | Template | Draft | Capturing a problem, users, capacity, and next milestone. |
 | [Task brief](templates/task-brief.md) | Template | Draft | Giving a human or assistant a bounded task with completion criteria. |
 | [Decision record](templates/decision-record.md) | Template | Draft | Preserving a real decision, rationale, authority, and review conditions. |
