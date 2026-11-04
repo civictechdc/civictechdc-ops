@@ -10,7 +10,9 @@ The resource itself contains its scope, sources, and approval requirements.
 | [Project steward](skills/project-steward.md) | Skill | Draft; not installed | Preparing a bounded project brief, next-step proposal, or handoff. |
 | [Orchestration pattern](tools/orchestration.md) | Tool guide | Reference; deployment-specific | Understanding the roles of the task board, assistant/worker, and shared library. |
 | [Luma helper](integrations/luma/README.md) | Integration/tool | Experimental; live account unqualified | Previewing read requests and, with separate authorization, reading limited event data. |
-| [Slack integration plan](integrations/slack/README.md) | Integration/workflow | Proposal; not implemented or connected | Planning a mention-only support pilot and a separately controlled task handoff. |
+| [Slack integration plan](integrations/slack/README.md) | Integration/workflow | Proposal; not implemented or connected | Planning mention-based support, explicitly configured email alerts, and a controlled task handoff. |
+| [Email reply alerts](workflows/email-reply-alerts.md) | Workflow | Proposal; no mailbox or sending enabled | Flagging relevant email in a restricted Slack channel with a draft reply for human review. |
+| [Email reply alert layout](templates/email-reply-alert.md) | Template | Draft; illustrative only | Structuring a private review notice without implying a reply has been sent. |
 | [Project brief](templates/project-brief.md) | Template | Draft | Capturing a problem, users, capacity, and next milestone. |
 | [Task brief](templates/task-brief.md) | Template | Draft | Giving a human or assistant a bounded task with completion criteria. |
 | [Decision record](templates/decision-record.md) | Template | Draft | Preserving a real decision, rationale, authority, and review conditions. |

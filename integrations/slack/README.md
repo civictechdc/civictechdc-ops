@@ -17,6 +17,8 @@ Example pilot requests:
 - Find the project-brief template or explain a documented workflow.
 - Prepare draft event copy from confirmed inputs.
 - Propose a small project task for a maintainer to review.
+- Receive an explicitly configured email-needs-reply alert, with a draft ready
+  for an authorized reviewer.
 
 Do not require volunteers to use a new task system merely to participate.
 Deployment-specific Paperclip links may require separate access; do not assume
@@ -25,13 +27,19 @@ every Slack participant can open them.
 ## Recommended pilot
 
 1. Choose one approved channel and a small explicit user allowlist.
-2. Reply only to explicit mentions, in the initiating thread. Require a new
-   mention for a follow-up; do not silently monitor ordinary conversation.
+2. For interactive chat, reply only to explicit mentions in the initiating
+   thread. Require a new mention for a follow-up; do not silently monitor
+   ordinary conversation.
 3. Initially retrieve only the public support library and other explicitly
-   approved public sources. Do not import historical Slack messages.
+   approved public sources for chat. A separately authorized mailbox workflow
+   may access only its agreed email scope. Do not import historical Slack
+   messages.
 4. Return answers, drafts, and task proposals—not terminal execution, automatic
    assignments, announcements, DMs, event creation, merges, or deployments.
-5. Agree on a short data-handling notice, limited retention, rate/usage limits,
+5. Proactive email alerts require their own explicit mailbox and restricted
+   review-channel approval. They do not grant general unsolicited posting or
+   workspace monitoring.
+6. Agree on a short data-handling notice, limited retention, rate/usage limits,
    a responsible operator, and a way to disable the bot.
 
 The Slack-facing process must not inherit unrestricted worker tools,
@@ -41,6 +49,23 @@ process or profile on the same account alone is not a security boundary.
 
 The controlled Paperclip handoff described here still needs implementation and
 testing. A Slack adapter does not automatically supply task authorization.
+
+## Proactive email alerts
+
+The requested [email reply workflow](../../workflows/email-reply-alerts.md)
+adds a separate trigger: a relevant email, not a Slack mention. After explicit
+setup approval, the bot would post a review notice and proposed reply to the
+designated restricted channel.
+
+The first phase is **notify and draft only**. A human reviews and sends in the
+mail client. It does not save correspondence to this public library, send email,
+or require reading Slack history. An appropriately scoped bot can post to its
+approved channel through the message-posting API; mailbox access and detection
+need a separate connector and provider-specific permission review.
+
+Neither the mailbox connector nor proactive posting workflow is implemented or
+connected by this repository. Use the workflow's decision checklist before
+configuring either.
 
 ## Connecting the app
 

@@ -8,6 +8,8 @@ reviewed November 3, 2026; maintaining role is unassigned.
 - [Task brief](task-brief.md) — a bounded request for a human or assistant.
 - [Decision record](decision-record.md) — what was decided, why, and by whom
   under what authority.
+- [Email reply alert](email-reply-alert.md) — an illustrative restricted-channel
+  review notice and proposed reply; not a completed email record or send action.
 - [Event drafts](../integrations/luma/event-templates/README.md) — five
   placeholder-only drafts, kept with their related integration.
 - [Media-request record](../knowledge/media-request-workflow.md#minimal-private-record)
