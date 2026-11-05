@@ -35,6 +35,17 @@ session/credential lifecycles.
    belong in the project's maintained repository. Private results stay in
    their restricted system.
 
+## Slack belongs at the coordination layer
+
+Use one organization-owned connection with explicit channel/user boundaries
+and task/thread routing, rather than giving every worker its own Slack
+credentials or independent listener. The
+[proposal-intake pilot](../integrations/slack/README.md) queues private,
+unassigned backlog requests and fixed status links; a human reviews before
+assignment. It does not provide a conversational worker or email connector.
+The separate [email-alert workflow](../workflows/email-reply-alerts.md) remains
+a proposal with its own mailbox and review-audience authorization.
+
 ## Runtime boundaries
 
 Tool installation, provider/model selection, credential injection, budgets,

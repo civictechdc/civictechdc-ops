@@ -21,10 +21,12 @@ privacy, and maintenance burden in mind.
    ```bash
    bash -n integrations/luma/scripts/luma.sh integrations/luma/tests/run-offline.sh
    bash integrations/luma/tests/run-offline.sh
+   bash integrations/slack/bridge/tests/run-offline.sh
    ```
 
    Tests need Bash, jq, GNU date, Python 3, and Linux `unshare` with unprivileged
-   user/network namespaces. They must not fall back to the host network.
+   user/network namespaces. Slack's synthetic suite does not require the live
+   SDK or tokens. Tests must not fall back to the host network.
 6. Review your complete diff and report checks not run. Do not use real
    credentials or contact external services merely to test a contribution.
 

@@ -1,0 +1,15 @@
+{
+  "workspace_id": "TTEST01",
+  "app_id": "ATEST01",
+  "bot_user_id": "UTESTBOT",
+  "bot_id": "BTEST01",
+  "channel_id": "CTEST01",
+  "allowed_user_ids": ["UTESTHUMAN"],
+  "company_id": "00000000-0000-4000-8000-000000000001",
+  "company_prefix": "TEST",
+  "paperclip_api_url": "http://127.0.0.1:12345/api",
+  "paperclip_public_url": "https://paperclip.example.invalid",
+  "state_path": "/PRIVATE-STATE-DIRECTORY/bridge.sqlite",
+  "poll_interval_seconds": 60,
+  "integration_approved": false
+}

@@ -50,8 +50,19 @@ The `calendar` command prints a request plan, not account data. The test runner
 requires Linux user/network namespaces and fails rather than running without
 network isolation. See the integration README for dependencies and limitations.
 
-No write commands, event publishing, guest exports, invitations, scheduled jobs,
-or automatic account connections are included.
+The Luma helper includes no write commands, event publishing, guest exports,
+invitations, scheduled jobs, or automatic account connections.
+
+The separate [Slack proposal pilot](integrations/slack/README.md) has an
+experimental, approval-first task-intake bridge. Its tests are also offline:
+
+```bash
+bash integrations/slack/bridge/tests/run-offline.sh
+```
+
+Live use requires separately authorized app installation, private credentials,
+and audience/permission checks. It creates review proposals, not automatic
+worker runs or email responses.
 
 ## Shared knowledge is not blanket permission
 

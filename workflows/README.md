@@ -14,8 +14,9 @@ into policy.
   authorized content/code change, deferring to current website guidance.
 - [Support-tool orchestration](../tools/orchestration.md) — reference pattern
   for moving from a bounded request to review and reusable knowledge.
-- [Slack support pilot](../integrations/slack/README.md) — proposed Slack intake
-  and controlled task handoff; not implemented or connected.
+- [Slack support pilot](../integrations/slack/README.md) — experimental
+  approval-first proposal intake; broader support and live Slack access
+  remain unqualified.
 - [Email reply alerts](email-reply-alerts.md) — proposed proactive notifications
   and draft replies in a restricted Slack channel; no mailbox access or
   automatic sending enabled.

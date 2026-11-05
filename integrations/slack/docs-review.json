@@ -63,5 +63,65 @@
       "http_status": 200,
       "sha256_of_retrieved_html": "f19443cb69110e2067cb206da4ed69407bceab20b73d5825c50e85b24b43c55e"
     }
-  ]
+  ],
+  "bridge_review": {
+    "reviewed_at_utc": "2026-11-05T04:00:31.488284+00:00",
+    "method": "Direct HTTPS retrieval and inspection of official public documentation; no workspace credentials, Slack data API, or live bot tested.",
+    "sources": [
+      {
+        "url": "https://docs.slack.dev/apis/events-api/using-socket-mode/",
+        "status": 200,
+        "sha256": "a1bfcb61f53fd8920ef4843a338f97c25c5e8f0b9867944ab7f0f85cb785a6f7",
+        "bytes": 137435
+      },
+      {
+        "url": "https://docs.slack.dev/reference/events/app_mention/",
+        "status": 200,
+        "sha256": "d929856f8d50c05235dd72dea531315a14c73e1f17c2b854720cd028df791897",
+        "bytes": 87636
+      },
+      {
+        "url": "https://docs.slack.dev/reference/methods/conversations.info/",
+        "status": 200,
+        "sha256": "c5adcb6b2ee4c3aac066e0195776c0d5f7337dc182753f751425f169f58426f8",
+        "bytes": 108225
+      },
+      {
+        "url": "https://docs.slack.dev/reference/methods/conversations.members/",
+        "status": 200,
+        "sha256": "515dcf6893dd19f1d7e31494d070a6d12f126bac97e349388de15067ee25dc43",
+        "bytes": 76538
+      },
+      {
+        "url": "https://docs.slack.dev/reference/methods/chat.postMessage/",
+        "status": 200,
+        "sha256": "21ba4270a3d926db0a45cc31c8b0167ae0ce002eaf4e8045c8ada61264427a0b",
+        "bytes": 110923
+      },
+      {
+        "url": "https://docs.slack.dev/reference/methods/auth.test/",
+        "status": 200,
+        "sha256": "5bb022ef70ffddb0aa0af9be3223acd18e1db82a1cd82c5b6140ca3ea54f3bf4",
+        "bytes": 70983
+      },
+      {
+        "url": "https://docs.slack.dev/reference/scopes/groups.read/",
+        "status": 200,
+        "sha256": "d97d3020149fc4caba6dda25b2d104a5028a74d0dc65f6965da57804dc8bd4d0",
+        "bytes": 52102
+      },
+      {
+        "url": "https://docs.slack.dev/tools/python-slack-sdk/socket-mode/",
+        "status": 200,
+        "sha256": "4b37b0fc2b22642fa065ce6fa75a06ba8da40d8944bed335ed8a6b00f1cdd387",
+        "bytes": 114986
+      }
+    ],
+    "sdk": {
+      "name": "slack-sdk",
+      "version": "3.46.0",
+      "metadata_url": "https://pypi.org/pypi/slack-sdk/3.46.0/json",
+      "wheel_sha256": "6286d89da97ea193c853609131515e6f1b3edf86866d6e5aad0dba9dcf1cb72d"
+    }
+  }
 }

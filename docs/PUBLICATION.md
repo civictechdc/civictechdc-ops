@@ -33,6 +33,7 @@ Institutional knowledge can include verified public facts and actual public
 decisions, not just drafts. Verification and policy approval are different:
 record sources and review dates, and never infer approval from publication.
 
-Local tests use synthetic credentials and a non-forwarding curl replacement in
-an isolated network namespace. They establish local behavior only. Live API
+Local tests use synthetic credentials and isolated network namespaces. Luma's
+HTTP tests use a non-forwarding curl replacement; Slack's tests use in-process
+fakes and socket/DNS blockers. They establish local behavior only. Live API
 access and organizational adoption remain separate approval steps.

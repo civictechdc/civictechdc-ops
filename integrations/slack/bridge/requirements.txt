@@ -1,0 +1,2 @@
+# Official SDK base wheel; no Bolt or optional transport dependencies.
+slack-sdk==3.46.0 --hash=sha256:6286d89da97ea193c853609131515e6f1b3edf86866d6e5aad0dba9dcf1cb72d

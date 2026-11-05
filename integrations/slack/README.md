@@ -1,10 +1,58 @@
-# Slack integration plan
+# Slack integration
 
-**Status:** proposal; not implemented, installed, or connected by this repository.
-**Reviewed:** November 3, 2026. **Maintaining role:** unassigned.
-**Provenance:** current official Slack documentation and the Hermes source
-snapshot linked below. These are setup references, not a live integration test
-or approval from a workspace or project.
+**Status:** experimental proposal-intake bridge available; live Slack access
+unqualified. Conversational assistance and email alerts remain proposals.
+**Reviewed:** November 5, 2026. **Maintaining role:** unassigned.
+**Provenance:** official Slack documentation, the published Paperclip
+2026.1023.0 API contract, and the Hermes source snapshot linked below.
+This public library is not a deployment inventory or workspace approval.
+
+## Available pilot
+
+The [Socket Mode bridge](bridge/README.md) and
+[app manifest](bridge/manifest.json) implement a deliberately small first step:
+
+1. An explicit mention from an allowed person in one approved private channel
+   becomes a **private, unassigned backlog proposal** in Paperclip.
+2. Slack receives a task link. An organizer reviews the request in Paperclip
+   before intentionally assigning it and moving it into work.
+3. The bridge can post fixed status notices back to the originating thread.
+   It never relays worker comments, drafts, descriptions, or arbitrary output.
+
+The bridge does not run Hermes or another model, assign agents, read message
+history, follow links, fetch files, send DMs, or access email. A further mention
+in an already tracked thread does not silently modify an assigned task.
+Offline tests use synthetic data and a network-isolated runner; a real app
+installation, audience check, and mention/status roundtrip are still required.
+
+### Ownership and routing
+
+Keep Slack transport and authorization at the shared coordination layer:
+
+| Level | Responsibility |
+| --- | --- |
+| Organization/coordinator | App ownership, protected credentials, authorization, delivery, and receipts. |
+| Channel/project | Approved audience and routing; not workspace-wide access. |
+| Task/thread | One tracked request and its review/status links. |
+| Worker | Bounded work after organizer review; no Slack app token in its environment. |
+
+Paperclip remains the task record. The bridge's private database holds transport
+receipts and pending intake, not a second agent/task-management system.
+Reusable source and instructions belong here; live credentials, IDs, message
+content, and deployment automation do not.
+
+Paperclip also has native Slack chat connectors. Its published 2026.1023.0
+release labels chat connectors experimental, and the documented setup uses
+webhook delivery and account linking. Qualify those permissions, identities,
+and hosting requirements before choosing that path. Do not make a trusted-local
+dashboard public just to receive Slack callbacks, or enable an independent
+Hermes gateway alongside the same bot.
+
+Private backlog is not a universal platform-wide execution lock. The bridge
+conservatively checks for routines, plugins, and scheduled agent heartbeats;
+independent automation could otherwise consume new-task activity. Stop and
+requalify it before changing those assumptions. A separate process/account
+also does not protect secrets from a VM owner or a privileged worker.
 
 ## What we want
 
@@ -12,7 +60,7 @@ Use Slack as a convenient support/intake surface, this repository as the shared
 support library, and Paperclip as a task/review record. A restricted worker can
 prepare requested outputs after the appropriate human review.
 
-Example pilot requests:
+Examples for the broader, still-proposed support workflow:
 
 - Find the project-brief template or explain a documented workflow.
 - Prepare draft event copy from confirmed inputs.
@@ -24,7 +72,7 @@ Do not require volunteers to use a new task system merely to participate.
 Deployment-specific Paperclip links may require separate access; do not assume
 every Slack participant can open them.
 
-## Recommended pilot
+## Broader support workflow — proposed
 
 1. Choose one approved channel and a small explicit user allowlist.
 2. For interactive chat, reply only to explicit mentions in the initiating
@@ -47,8 +95,9 @@ credentials, files, or administrative access. Treat message text, links, and
 attachments as untrusted input. Use a reviewed isolation boundary; a separate
 process or profile on the same account alone is not a security boundary.
 
-The controlled Paperclip handoff described here still needs implementation and
-testing. A Slack adapter does not automatically supply task authorization.
+Only the narrow proposal-intake handoff above is implemented. Conversational
+answers, public-project channels, tool-enabled execution from Slack, and
+automatic publication require additional implementation and review.
 
 ## Proactive email alerts
 
@@ -73,12 +122,13 @@ Use an approved internal Slack app with **Socket Mode**: events arrive over an
 outbound WebSocket, so this does not require exposing a public HTTP request URL
 or making a task dashboard public.
 
-For a purpose-built, mention-only front door, the narrow starting contract is:
+For the implemented private-channel proposal pilot, the app contract is:
 
 | Setting | Purpose |
 | --- | --- |
 | Bot scope `app_mentions:read` | Receive explicit mentions. |
 | Bot scope `chat:write` | Reply as the bot. |
+| Bot scope `groups:read` | Verify the private channel and its complete current membership, not message history. |
 | App-level scope `connections:write` | Open Socket Mode connections; this is not a bot scope. |
 | Bot event `app_mention` | Deliver mentions, not all channel messages. |
 
@@ -107,7 +157,7 @@ Hermes has a native Slack Socket Mode adapter and a `hermes slack manifest`
 helper. Its generated full manifest requests substantially more than the narrow
 pilot above, including history, DMs, files, and slash-command capabilities.
 
-**The two-scope bot above is a custom-app design, not a drop-in minimal
+**The narrow bot above is a purpose-built bridge, not a drop-in minimal
 configuration for the full Hermes gateway.** Do not assume it can support all
 Hermes features. If using that gateway, review the installed version's scopes,
 subscriptions, user authorization, toolsets, and platform settings first.
@@ -148,6 +198,11 @@ or client-compatibility test.
 - [Socket connection scope](https://docs.slack.dev/reference/scopes/connections.write/)
 - [Mention event and its limits](https://docs.slack.dev/reference/events/app_mention/)
 - [Message posting, membership, and threads](https://docs.slack.dev/reference/methods/chat.postMessage/)
+- [Private-channel metadata scope](https://docs.slack.dev/reference/scopes/groups.read/)
+- [Conversation information](https://docs.slack.dev/reference/methods/conversations.info/)
+- [Paginated membership](https://docs.slack.dev/reference/methods/conversations.members/)
+- [Python Slack SDK Socket Mode](https://docs.slack.dev/tools/python-slack-sdk/socket-mode/)
+- [Paperclip Slack task-tool design](https://github.com/paperclipai/paperclip/blob/f7ad1dc7cacedf7153a45e854ddfdd544aa87abd/doc/connections/SLACK-TASK-TOOLS.md)
 - [Public-channel message events](https://docs.slack.dev/reference/events/message.channels/)
 - [Private-channel message events](https://docs.slack.dev/reference/events/message.groups/)
 - [App distribution and permission changes](https://docs.slack.dev/app-management/distribution/)
