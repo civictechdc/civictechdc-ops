@@ -8,6 +8,9 @@ credential store, or live inventory of connected accounts.
 
 - [Orchestration pattern](orchestration.md) — how the library, task board,
   assistants/workers, and project repositories fit together.
+- [Hermes operator console](../integrations/hermes/README.md) — private direct
+  chat/administration, deployment boundaries, and an acceptance checklist;
+  not a volunteer interface or installer.
 - [Luma helper](../integrations/luma/README.md) — experimental GET-only CLI,
   dry-run by default, with isolated offline tests. Live account access is
   unqualified and requires separate authorization.

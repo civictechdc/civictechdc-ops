@@ -7,6 +7,7 @@ service here does not mean it is installed, connected, or authorized.
 | --- | --- |
 | [Luma](luma/README.md) | Experimental read-only CLI; dry-run by default; live account unqualified. |
 | [Slack](slack/README.md) | Proposed setup and safety plan only; no connector, app, or task bridge implemented here. |
+| [Hermes operator console](hermes/README.md) | Optional private-admin reference; no installer, live inventory, or access grant. |
 
 Store no credentials, real workspace/member/channel IDs, participant records,
 or private service exports here. Follow the

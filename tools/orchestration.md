@@ -1,7 +1,7 @@
 # Support-tool orchestration
 
 **Status:** architectural reference, not a deployment or access grant.
-**Reviewed:** November 3, 2026. **Maintaining role:** unassigned.
+**Reviewed:** November 5, 2026. **Maintaining role:** unassigned.
 **Provenance:** proposed support architecture for this library; specific
 deployments must document and validate their own configuration separately.
 
@@ -17,6 +17,11 @@ deployments must document and validate their own configuration separately.
 
 The named tools illustrate roles, not a claim that this repository installs,
 connects, or configures any of them.
+
+An optional [private Hermes console](../integrations/hermes/README.md) is for
+operator chat and administration, not a replacement for the task board or a
+volunteer access point. Direct chat and managed task runs can have different
+session/credential lifecycles.
 
 ## A small end-to-end loop
 
