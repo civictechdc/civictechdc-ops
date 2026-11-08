@@ -27,6 +27,30 @@ def retry_after(error):
         return 60
 
 
+def slack_failure_code(response, fallback):
+    """Read only exact provider error names; never stringify response/errors."""
+    try:
+        if getattr(response, "status_code", None) == 429:
+            return "slack_rate_limited"
+        error = response.get("error")
+        if type(error) is str:
+            return {
+                "missing_scope": "slack_missing_scope",
+                "not_in_channel": "slack_channel_not_member",
+                "channel_not_found": "slack_channel_unavailable",
+                "ratelimited": "slack_rate_limited",
+                "rate_limited": "slack_rate_limited",
+                "invalid_auth": "slack_auth_failed",
+                "not_authed": "slack_auth_failed",
+                "token_revoked": "slack_auth_failed",
+                "token_expired": "slack_auth_failed",
+                "account_inactive": "slack_auth_failed",
+            }.get(error, fallback)
+    except Exception:
+        pass
+    return fallback
+
+
 class Gate:
     def __init__(self, config, slack):
         self.config = config
@@ -34,10 +58,32 @@ class Gate:
 
     def check(self, requester):
         c = self.config
-        if not c.integration_approved or requester not in c.allowed_user_ids:
-            raise Refused()
+        if not c.integration_approved:
+            raise Refused("config_invalid")
+        if requester not in c.allowed_user_ids:
+            raise Refused("slack_member_not_allowed")
         if requester not in self.snapshot():
-            raise Refused()
+            raise Refused("slack_requester_not_member")
+
+    def _read(self, method, unavailable, invalid, **kwargs):
+        try:
+            response = method(**kwargs)
+        except Exception as error:
+            # The SDK may attach a SlackResponse to an exception. Ignore its
+            # body except for whitelisted error names/status; never print it.
+            try:
+                code = slack_failure_code(getattr(error, "response", None), unavailable)
+            except Exception:
+                code = unavailable
+            raise Refused(code) from None
+        try:
+            ok = response.get("ok")
+        except Exception:
+            raise Refused(invalid) from None
+        if ok is not True:
+            code = slack_failure_code(response, unavailable) if ok is False else invalid
+            raise Refused(code)
+        return response
 
     def snapshot(self):
         """Fresh complete membership; used once per bounded read-only poll batch.
@@ -46,45 +92,63 @@ class Gate:
         """
         c = self.config
         if not c.integration_approved:
-            raise Refused()
+            raise Refused("config_invalid")
+        invalid = "slack_auth_failed"
         try:
-            auth = self.slack.auth_test()
-            if (auth.get("ok") is not True or auth.get("team_id") != c.workspace_id
+            auth = self._read(self.slack.auth_test, "slack_auth_failed", invalid)
+            if (auth.get("team_id") != c.workspace_id
                     or auth.get("user_id") != c.bot_user_id
                     or auth.get("bot_id") != c.bot_id):
-                raise Refused()
-            response = self.slack.conversations_info(channel=c.channel_id)
-            channel = response.get("channel", {})
-            if (response.get("ok") is not True or channel.get("id") != c.channel_id
-                    or channel.get("is_private") is not True
-                    or ("is_member" in channel and channel["is_member"] is not True)
-                    or any(channel.get(k) is not False for k in (
-                        "is_archived", "is_shared", "is_ext_shared", "is_org_shared"))):
-                raise Refused()
+                raise Refused("slack_identity_mismatch")
+            invalid = "slack_channel_metadata_invalid"
+            response = self._read(self.slack.conversations_info,
+                                  "slack_channel_unavailable", invalid, channel=c.channel_id)
+            channel = response.get("channel")
+            if not isinstance(channel, dict) or channel.get("id") != c.channel_id:
+                raise Refused(invalid)
+            if type(channel.get("is_private")) is not bool:
+                raise Refused(invalid)
+            if not channel["is_private"]:
+                raise Refused("slack_channel_not_private")
+            if "is_member" in channel:
+                if type(channel["is_member"]) is not bool:
+                    raise Refused(invalid)
+                if not channel["is_member"]:
+                    raise Refused("slack_channel_not_member")
+            for key in ("is_archived", "is_shared", "is_ext_shared", "is_org_shared"):
+                if type(channel.get(key)) is not bool:
+                    raise Refused(invalid)
+                if channel[key]:
+                    raise Refused("slack_channel_not_safe")
             permitted = c.allowed_user_ids | {c.bot_user_id}
             members, cursors, cursor = set(), set(), ""
+            invalid = "slack_membership_invalid"
             for _ in range(100):
-                page = self.slack.conversations_members(
-                    channel=c.channel_id, limit=200, cursor=cursor)
+                page = self._read(self.slack.conversations_members,
+                                  "slack_membership_unavailable", invalid,
+                                  channel=c.channel_id, limit=200, cursor=cursor)
                 users = page.get("members")
                 metadata = page.get("response_metadata")
-                if (page.get("ok") is not True or not isinstance(users, list)
-                        or not users or not isinstance(metadata, dict)
+                if (not isinstance(users, list) or not users or not isinstance(metadata, dict)
                         or not isinstance(metadata.get("next_cursor"), str)
-                        or any(not isinstance(u, str) or u not in permitted for u in users)):
-                    raise Refused()
+                        or any(not isinstance(u, str) for u in users)):
+                    raise Refused(invalid)
+                if any(u not in permitted for u in users):
+                    raise Refused("slack_member_not_allowed")
                 members.update(users)
                 cursor = metadata["next_cursor"]
                 if not cursor:
                     if c.bot_user_id not in members:
-                        raise Refused()
+                        raise Refused("slack_channel_not_member")
                     return frozenset(members)
                 if cursor in cursors or len(cursor) > 2048:
-                    raise Refused()
+                    raise Refused(invalid)
                 cursors.add(cursor)
-            raise Refused()
+            raise Refused(invalid)
+        except Refused:
+            raise
         except Exception:
-            raise Refused() from None
+            raise Refused(invalid) from None
 
 
 class Bridge:

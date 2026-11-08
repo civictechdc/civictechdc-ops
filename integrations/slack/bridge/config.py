@@ -7,8 +7,23 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 
+PREFLIGHT_CODES = frozenset({
+    "config_invalid", "credentials_missing", "dependency_unavailable",
+    "slack_auth_failed", "slack_identity_mismatch", "slack_channel_unavailable",
+    "slack_missing_scope", "slack_channel_not_private", "slack_channel_not_member",
+    "slack_channel_not_safe", "slack_channel_metadata_invalid",
+    "slack_member_not_allowed", "slack_requester_not_member",
+    "slack_membership_unavailable", "slack_membership_invalid", "slack_rate_limited",
+    "paperclip_preflight_failed", "validation_failed",
+})
+
+
 class Refused(Exception):
-    """Safe, deliberately non-diagnostic boundary failure."""
+    """Boundary failure containing only a fixed, validated diagnostic code."""
+
+    def __init__(self, code="validation_failed"):
+        self.code = code if type(code) is str and code in PREFLIGHT_CODES else "validation_failed"
+        super().__init__(self.code)
 
 
 def identifier(value, prefix):

@@ -593,6 +593,156 @@ class AdapterTests(unittest.TestCase):
 
 
 class EntrypointTests(unittest.TestCase):
+    def invoke_preflight(self, command="check", slack=None, config_change=None,
+                         credentials=True, dependency=True, web_error=None,
+                         paperclip_error=None, gate_error=None):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps({**config_data(directory), **(config_change or {})}))
+            path.chmod(0o600)
+            slack = slack or Slack()
+            paperclip = PaperclipFake()
+            paperclip.safety_error = paperclip_error
+
+            def web_client(**kwargs):
+                if web_error is not None:
+                    raise web_error
+                return slack
+
+            modules = {
+                "slack_sdk": SimpleNamespace(WebClient=web_client) if dependency else None,
+                "slack_sdk.socket_mode": SimpleNamespace(SocketModeClient=network_forbidden),
+                "slack_sdk.socket_mode.response": SimpleNamespace(SocketModeResponse=SimpleNamespace),
+            }
+            environment = ({"SLACK_BOT_TOKEN": "xoxb-synthetic", "SLACK_APP_TOKEN": "xapp-synthetic"}
+                           if credentials else {})
+            with patch.dict(sys.modules, modules), patch.dict(os.environ, environment, clear=True), \
+                    patch.object(entry, "Paperclip", return_value=paperclip), \
+                    patch.object(entry, "Gate", wraps=entry.Gate) as gate, \
+                    patch.object(sys, "argv", ["slack_bridge.py", command, "--config", str(path)]), \
+                    patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+                    patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                if gate_error is not None:
+                    gate.side_effect = gate_error
+                result = entry.main()
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ["config.json"])
+            return result, stdout.getvalue(), stderr.getvalue()
+
+    def assert_diagnostic(self, code, **kwargs):
+        self.assertEqual(self.invoke_preflight(**kwargs), (1, "", "preflight_failed:" + code + "\n"))
+
+    def test_check_phase_failures_have_only_fixed_single_line_codes(self):
+        for code, kwargs in (
+                ("config_invalid", {"config_change": {"workspace_id": SENTINEL}}),
+                ("credentials_missing", {"credentials": False}),
+                ("dependency_unavailable", {"dependency": False}),
+                ("validation_failed", {"web_error": RuntimeError(SENTINEL)}),
+                ("paperclip_preflight_failed", {"paperclip_error": RuntimeError(SENTINEL)})):
+            with self.subTest(code=code):
+                self.assert_diagnostic(code, **kwargs)
+
+    def test_check_distinguishes_identity_channel_and_complete_membership_failures(self):
+        cases = [
+            ("slack_auth_failed", lambda s: s.auth.update(ok=False, error="invalid_auth")),
+            ("slack_identity_mismatch", lambda s: s.auth.update(user_id="UTESTOTHER")),
+            ("slack_channel_not_private", lambda s: s.channel.update(is_private=False)),
+            ("slack_channel_not_member", lambda s: s.channel.update(is_member=False)),
+            ("slack_channel_not_safe", lambda s: s.channel.update(is_archived=True)),
+            ("slack_channel_not_safe", lambda s: s.channel.update(is_shared=True)),
+            ("slack_channel_metadata_invalid", lambda s: s.channel.pop("is_private")),
+            ("slack_channel_metadata_invalid", lambda s: s.channel.update(is_member="false")),
+            ("slack_member_not_allowed", lambda s: s.pages[""]["members"].append("UTESTOTHER")),
+            ("slack_requester_not_member", lambda s: s.pages[""].update(members=["UTESTBOT"])),
+            ("slack_channel_not_member", lambda s: s.pages[""].update(members=["UTESTHUMAN"])),
+            ("slack_membership_invalid", lambda s: s.pages[""].pop("response_metadata")),
+        ]
+        for code, change in cases:
+            with self.subTest(code=code):
+                slack = Slack()
+                change(slack)
+                self.assert_diagnostic(code, slack=slack)
+        slack = Slack()
+        slack.pages = {
+            "": {"ok": True, "members": ["UTESTHUMAN", "UTESTBOT"],
+                 "response_metadata": {"next_cursor": "page-2"}},
+            "page-2": {"ok": True, "members": ["UTESTOTHER"],
+                       "response_metadata": {"next_cursor": ""}},
+        }
+        self.assert_diagnostic("slack_member_not_allowed", slack=slack)
+        slack.pages["page-2"] = TimeoutError(SENTINEL)
+        self.assert_diagnostic("slack_membership_unavailable", slack=slack)
+
+    def test_check_whitelists_provider_errors_but_never_echoes_provider_text(self):
+        cases = [
+            ("auth_test", "invalid_auth", "slack_auth_failed"),
+            ("auth_test", "token_revoked", "slack_auth_failed"),
+            ("auth_test", "token_expired", "slack_auth_failed"),
+            ("auth_test", "not_authed", "slack_auth_failed"),
+            ("auth_test", "account_inactive", "slack_auth_failed"),
+            ("conversations_info", "missing_scope", "slack_missing_scope"),
+            ("conversations_info", "not_in_channel", "slack_channel_not_member"),
+            ("conversations_info", "channel_not_found", "slack_channel_unavailable"),
+            ("conversations_members", "ratelimited", "slack_rate_limited"),
+            ("conversations_members", "rate_limited", "slack_rate_limited"),
+        ]
+        for method, provider, code in cases:
+            with self.subTest(method=method, provider=provider):
+                slack = Slack()
+                # Exercise both normal ok:false responses and SDK exceptions.
+                response = {"ok": False, "error": provider, "needed": SENTINEL}
+                with patch.object(slack, method, return_value=response):
+                    self.assert_diagnostic(code, slack=slack)
+                error = RuntimeError(SENTINEL)
+                error.response = response
+                with patch.object(slack, method, side_effect=error):
+                    self.assert_diagnostic(code, slack=slack)
+
+    def test_check_transport_and_malicious_provider_values_use_stage_fallback(self):
+        for method, code in (
+                ("auth_test", "slack_auth_failed"),
+                ("conversations_info", "slack_channel_unavailable"),
+                ("conversations_members", "slack_membership_unavailable")):
+            for value in (SENTINEL + "\nxoxb-synthetic", {"error": SENTINEL},
+                          ["missing_scope"], "slack_missing_scope", None):
+                with self.subTest(method=method, value=value):
+                    slack = Slack()
+                    error = TimeoutError(SENTINEL)
+                    error.code = "slack_missing_scope\n" + SENTINEL
+                    error.response = {"ok": False, "error": value, "payload": SENTINEL}
+                    with patch.object(slack, method, side_effect=error):
+                        self.assert_diagnostic(code, slack=slack)
+            slack = Slack()
+            with patch.object(slack, method, side_effect=TimeoutError(SENTINEL)):
+                self.assert_diagnostic(code, slack=slack)
+        error = RuntimeError(SENTINEL)
+        error.response = SimpleNamespace(status_code=429, headers={"Retry-After": SENTINEL})
+        slack = Slack()
+        with patch.object(slack, "conversations_members", side_effect=error):
+            self.assert_diagnostic("slack_rate_limited", slack=slack)
+
+    def test_refused_normalizes_unknown_codes_and_check_revalidates_tampering(self):
+        for value in (SENTINEL, "slack_missing_scope\n" + SENTINEL, None, {}, ["missing_scope"]):
+            refused = entry.Refused(value)
+            self.assertEqual(refused.code, "validation_failed")
+            self.assertEqual(refused.args, ("validation_failed",))
+            self.assert_diagnostic("validation_failed", gate_error=refused)
+            refused.code = value
+            self.assert_diagnostic("validation_failed", gate_error=refused)
+        refused = entry.Refused("slack_missing_scope")
+        del refused.code
+        self.assert_diagnostic("validation_failed", gate_error=refused)
+        self.assertEqual(len(entry.PREFLIGHT_CODES), 18)
+
+    def test_run_failures_remain_generic_without_check_diagnostics(self):
+        slack = Slack()
+        slack.channel["is_private"] = False
+        for kwargs in (
+                {"config_change": {"workspace_id": SENTINEL}},
+                {"credentials": False}, {"dependency": False}, {"slack": slack},
+                {"paperclip_error": RuntimeError(SENTINEL)}):
+            self.assertEqual(self.invoke_preflight(command="run", **kwargs),
+                             (1, "", "bridge_failed_closed\n"))
+
     def test_root_managed_config_mode_and_effective_group_are_exact(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.json"

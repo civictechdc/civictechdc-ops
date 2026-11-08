@@ -142,6 +142,49 @@ guaranteed pure.
    connects Socket Mode. Stop the service to disable it; revoke tokens if
    necessary. Logs contain only fixed diagnostic codes, not exception bodies.
 
+### Safe preflight diagnostics
+
+On a failed `check`, stderr is exactly one line:
+`preflight_failed:CODE` (plus its terminating newline), with a nonzero exit.
+No IDs, provider error text, response bodies, payloads, tokens, or exception
+representations are printed. Only the fixed codes below are supported; unknown
+or malformed errors use a fixed stage fallback. `run` retains only its generic
+`bridge_failed_closed` failure message, not these setup diagnostics.
+
+These are evidence about the failed check, **not a diagnosis of an unobserved
+workspace**. The check still makes only the previously authorized preflight
+reads, without saving credentials, writing bridge state, activating Socket Mode,
+creating an issue, or posting. It does not qualify the app-level connection
+token or a live mention roundtrip.
+
+| Code | Authorized operator's next check |
+| --- | --- |
+| `config_invalid` | Review the exact private schema, explicit approval, file ownership/modes, and existing private state-directory requirements. |
+| `credentials_missing` | Supply the required bot/app tokens through the protected environment; verify their expected token-type prefixes without printing them. |
+| `dependency_unavailable` | Verify the pinned SDK is installed in the Python environment used by this command. |
+| `slack_auth_failed` | The authentication step failed; check authorized API connectivity and that the bot token is valid, unrevoked, and approved for the intended installation. |
+| `slack_identity_mismatch` | Reconcile the approved workspace and bot user/bot IDs through trusted operator records; do not adopt IDs from untrusted input. |
+| `slack_channel_unavailable` | Verify the approved private channel ID and the app's access to it. |
+| `slack_missing_scope` | Verify the intended **private** pilot and the exact three bot scopes in the manifest; reinstall/reauthorize after approved scope changes. See the public-channel caveat below. |
+| `slack_channel_not_private` | Select the approved private pilot; public channels are not supported. |
+| `slack_channel_not_member` | Have an authorized human add the correct installed bot to the approved channel. |
+| `slack_channel_not_safe` | The channel is archived or shared; use an approved nonarchived, nonshared private pilot. |
+| `slack_channel_metadata_invalid` | Required privacy/safety metadata was missing or malformed; review API compatibility without bypassing the gate. |
+| `slack_member_not_allowed` | Stop and review the complete channel audience against the approved human allowlist plus bot. Do not automatically allow an unexpected member. |
+| `slack_requester_not_member` | Verify each configured allowed requester is currently in the pilot channel; preflight checks them all. |
+| `slack_membership_unavailable` | Membership lookup failed or could not complete; review authorized API availability/access before trying again. |
+| `slack_membership_invalid` | Membership or pagination data was incomplete/malformed; never accept a partial list. |
+| `slack_rate_limited` | Stop repeated checks and retry later under operator control; do not weaken checks or blindly retry writes. |
+| `paperclip_preflight_failed` | Review the existing local Paperclip connectivity and automation-safety requirements. This code reveals no task data. |
+| `validation_failed` | An unexpected validation failure occurred; review this implementation/environment without enabling raw SDK logging. |
+
+With only `groups:read`, asking Slack about a **public** channel can produce a
+missing-scope error for `channels:read` before privacy metadata is available.
+That is not a request to add `channels:read`, history scopes, or broader
+subscriptions: choose the intended private pilot instead, then verify the
+existing manifest scopes and reinstall after any approved changes. The bridge
+neither reports the provider's requested scope string nor broadens permissions.
+
 ## Durable state, failures, and retention
 
 The Socket Mode callback commits the syntactically accepted event before

@@ -23,7 +23,7 @@ _spec = importlib.util.spec_from_file_location(
 _package = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = _package
 _spec.loader.exec_module(_package)
-from _approval_slack_bridge.config import Config, Refused  # noqa: E402
+from _approval_slack_bridge.config import Config, PREFLIGHT_CODES, Refused  # noqa: E402
 from _approval_slack_bridge.core import Bridge, Gate  # noqa: E402
 from _approval_slack_bridge.paperclip import Paperclip  # noqa: E402
 from _approval_slack_bridge.store import Store  # noqa: E402
@@ -87,21 +87,26 @@ def main():
     sys.excepthook = lambda *_: sys.stderr.write("bridge_failed_closed\n")
     threading.excepthook = lambda *_: sys.stderr.write("background_failed_closed\n")
     store, socket_client, lock_fd = None, None, None
+    phase = "config_invalid"
     try:
         config = load_config(args.config)
         # This is the only process environment boundary.
+        phase = "credentials_missing"
         bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
         app_token = os.environ.get("SLACK_APP_TOKEN", "")
         if not bot_token.startswith("xoxb-") or not app_token.startswith("xapp-"):
-            raise Refused()
+            raise Refused("credentials_missing")
+        phase = "dependency_unavailable"
         from slack_sdk import WebClient
         from slack_sdk.socket_mode import SocketModeClient
         from slack_sdk.socket_mode.response import SocketModeResponse
+        phase = "validation_failed"
         slack = WebClient(token=bot_token, retry_handlers=[], timeout=10, logger=logger)
-        paperclip = Paperclip(config)
         # Read-only preflight. "check" never opens the DB or lock file, or socket.
         for requester in sorted(config.allowed_user_ids):
             Gate(config, slack).check(requester)
+        phase = "paperclip_preflight_failed"
+        paperclip = Paperclip(config)
         paperclip.check_safe()
         if args.command == "check":
             print("preflight_ok_read_only")
@@ -129,9 +134,20 @@ def main():
             if not worked:
                 stopped.wait(0.25)
     except KeyboardInterrupt:
+        if args.command == "check":
+            sys.stderr.write("preflight_failed:validation_failed\n")
+            return 1
         return 0
-    except Exception:
-        sys.stderr.write("bridge_failed_closed\n")
+    except Exception as error:
+        if args.command == "check":
+            # Only our validated code type may override a fixed phase. Do not
+            # trust arbitrary exception.code/args, SDK errors, or response text.
+            code = getattr(error, "code", None) if type(error) is Refused else None
+            if type(code) is not str or code not in PREFLIGHT_CODES or code == "validation_failed":
+                code = phase
+            sys.stderr.write("preflight_failed:" + code + "\n")
+        else:
+            sys.stderr.write("bridge_failed_closed\n")
         return 1
     finally:
         if socket_client is not None:
