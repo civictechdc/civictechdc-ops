@@ -67,6 +67,10 @@ class Store:
             "workspace_id", "app_id", "bot_user_id", "bot_id", "channel_id",
             "company_id", "company_prefix", "paperclip_api_url", "paperclip_public_url")]
         values.append(sorted(config.allowed_user_ids))
+        # Preserve the exact historical digest for default/explicit allowlist.
+        # Dynamic membership changes authorization policy, not just its roster.
+        if config.access_mode != "allowlist":
+            values.append({"access_mode": config.access_mode})
         digest = hashlib.sha256(json.dumps(values).encode("utf-8")).hexdigest()
         with self.transaction() as db:
             saved = db.execute("SELECT digest FROM binding WHERE singleton=1").fetchone()

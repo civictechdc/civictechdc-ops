@@ -7,7 +7,7 @@ No model, shell, agent, comment, file, search, or history interfaces exist here.
 import re
 import time
 
-from .config import Refused
+from .config import Refused, identifier
 
 
 class RateLimited(Exception):
@@ -58,9 +58,10 @@ class Gate:
 
     def check(self, requester):
         c = self.config
-        if not c.integration_approved:
+        if not c.integration_approved or c.access_mode not in ("allowlist", "channel_members"):
             raise Refused("config_invalid")
-        if requester not in c.allowed_user_ids:
+        if (not identifier(requester, "[UW]") or requester == c.bot_user_id
+                or (c.access_mode == "allowlist" and requester not in c.allowed_user_ids)):
             raise Refused("slack_member_not_allowed")
         if requester not in self.snapshot():
             raise Refused("slack_requester_not_member")
@@ -91,7 +92,7 @@ class Gate:
         This is not cached across batches or reused for a publication.
         """
         c = self.config
-        if not c.integration_approved:
+        if not c.integration_approved or c.access_mode not in ("allowlist", "channel_members"):
             raise Refused("config_invalid")
         invalid = "slack_auth_failed"
         try:
@@ -131,9 +132,9 @@ class Gate:
                 metadata = page.get("response_metadata")
                 if (not isinstance(users, list) or not users or not isinstance(metadata, dict)
                         or not isinstance(metadata.get("next_cursor"), str)
-                        or any(not isinstance(u, str) for u in users)):
+                        or any(not identifier(u, "[UW]") for u in users)):
                     raise Refused(invalid)
-                if any(u not in permitted for u in users):
+                if c.access_mode == "allowlist" and any(u not in permitted for u in users):
                     raise Refused("slack_member_not_allowed")
                 members.update(users)
                 cursor = metadata["next_cursor"]
@@ -164,7 +165,8 @@ class Bridge:
         No external call or raw payload retention occurs here.
         """
         c = self.config
-        if not isinstance(payload, dict) or not c.integration_approved:
+        if (not isinstance(payload, dict) or not c.integration_approved
+                or c.access_mode not in ("allowlist", "channel_members")):
             return
         e = payload.get("event")
         if (payload.get("type") != "event_callback"
@@ -179,8 +181,8 @@ class Bridge:
                 or auth.get("user_id") != c.bot_user_id or auth.get("is_bot") is not True):
             return
         if (e.get("type") != "app_mention" or e.get("channel") != c.channel_id
-                or not isinstance(e.get("user"), str)
-                or e.get("user") not in c.allowed_user_ids
+                or not identifier(e.get("user"), "[UW]")
+                or (c.access_mode == "allowlist" and e["user"] not in c.allowed_user_ids)
                 or e.get("user") == c.bot_user_id
                 or any(k in e for k in ("subtype", "bot_id", "bot_profile"))
                 or e.get("channel_type") in ("im", "mpim")):

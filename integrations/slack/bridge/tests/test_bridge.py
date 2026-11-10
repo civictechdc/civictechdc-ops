@@ -2,6 +2,7 @@
 
 import copy
 from dataclasses import replace
+import hashlib
 import importlib.util
 import io
 import json
@@ -592,7 +593,196 @@ class AdapterTests(unittest.TestCase):
             redirect.redirect_request(None, None, 302, None, None, "https://example.invalid")
 
 
+class ChannelMembershipTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.config = Config.parse({
+            **config_data(self.temp.name), "access_mode": "channel_members", "allowed_user_ids": [],
+        })
+        self.store = Store(self.config.state_path)
+        self.slack = Slack()
+        self.paperclip = PaperclipFake()
+        self.bridge = Bridge(self.config, self.store, self.slack, self.paperclip, clock=lambda: 100)
+
+    def tearDown(self):
+        self.store.close()
+        self.temp.cleanup()
+
+    def queue(self, user="UTESTHUMAN", event_id="event-1", thread=THREAD):
+        p = payload(event_id)
+        p["event"].update(user=user, ts=thread)
+        self.bridge.accept("env-" + event_id, p)
+
+    def test_new_members_are_eligible_without_roster_config_changes_or_thread_append(self):
+        self.queue()
+        self.bridge.work_once()
+        self.slack.pages[""]["members"].append("UTESTNEW")
+        self.queue("UTESTNEW", "event-new", "1700000002.000001")
+        self.bridge.work_once()
+        self.assertEqual(len(self.paperclip.created), 2)
+        self.assertEqual(self.config.allowed_user_ids, frozenset())
+        self.queue("UTESTNEW", "event-reference")
+        self.bridge.work_once()
+        self.assertEqual(len(self.paperclip.created), 2)
+        self.assertIn("already has a proposal", self.slack.sent[-1]["text"])
+        self.store.bind(self.config)  # Live roster changes do not rebind policy.
+
+    def test_callback_durably_queues_valid_ids_without_network_but_outsiders_are_rejected(self):
+        with patch.object(self.slack, "auth_test", side_effect=network_forbidden), \
+                patch.object(self.slack, "conversations_info", side_effect=network_forbidden), \
+                patch.object(self.slack, "conversations_members", side_effect=network_forbidden):
+            self.queue("UTESTOUTSIDER")
+        self.assertIsNotNone(self.store.pending_event())
+        self.bridge.work_once()
+        self.assertEqual(self.paperclip.created, [])
+        self.assertEqual(self.slack.sent, [])
+        self.assertEqual(self.store.proposal(THREAD)["state"], "rejected")
+        self.assertIsNone(self.store.proposal(THREAD)["text"])
+
+    def test_members_leaving_after_intake_or_during_preflight_cannot_create(self):
+        self.queue()
+        self.slack.pages[""]["members"].remove("UTESTHUMAN")
+        self.bridge.work_once()
+        self.assertEqual(self.paperclip.created, [])
+        self.slack.pages[""]["members"].append("UTESTHUMAN")
+        self.queue(event_id="event-precreate", thread="1700000002.000001")
+        with patch.object(self.paperclip, "check_safe", side_effect=lambda:
+                          self.slack.pages[""]["members"].remove("UTESTHUMAN")):
+            self.bridge.work_once()
+        self.assertEqual(self.paperclip.created, [])
+        self.assertEqual(self.slack.sent, [])
+
+    def test_departure_before_publication_denies_posts_and_status_reads_until_rejoin(self):
+        self.queue()
+        original_create = self.paperclip.create_proposal
+
+        def create_then_leave(text, thread):
+            issue = original_create(text, thread)
+            self.slack.pages[""]["members"].remove("UTESTHUMAN")
+            return issue
+
+        with patch.object(self.paperclip, "create_proposal", side_effect=create_then_leave):
+            self.bridge.work_once()
+        self.assertEqual(self.store.proposal(THREAD)["state"], "created")
+        self.assertEqual(self.slack.sent, [])
+        self.paperclip.current_status = "in_review"
+        self.bridge.poll_statuses()
+        self.assertEqual(self.paperclip.status_calls, [])
+        self.slack.pages[""]["members"].append("UTESTHUMAN")
+        self.bridge.poll_statuses()
+        self.assertEqual(len(self.slack.sent), 1)
+        self.assertIn("Proposal status: in_review", self.slack.sent[0]["text"])
+
+    def test_complete_pagination_includes_apps_but_does_not_authorize_bot_events(self):
+        self.slack.pages = {
+            "": {"ok": True, "members": ["UTESTHUMAN", "UTESTBOT"],
+                 "response_metadata": {"next_cursor": "page-2"}},
+            "page-2": {"ok": True, "members": ["UTESTNEW", "UBOTOTHER"],
+                       "response_metadata": {"next_cursor": ""}},
+        }
+        self.bridge.gate.check("UTESTNEW")
+        self.assertEqual(self.slack.member_calls, ["", "page-2"])
+        for fields in ({"user": "UBOTOTHER", "bot_id": "BOTHER"},
+                       {"user": "UBOTOTHER", "subtype": "bot_message"},
+                       {"user": "UBOTOTHER", "bot_profile": {}},
+                       {"user": "UTESTBOT"}, {"user": "not-a-user-id"},
+                       {"user": ["UTESTNEW"]}):
+            p = payload()
+            p["event"].update(fields)
+            self.bridge.accept("env-bot", p)
+        self.assertIsNone(self.store.pending_event())
+        self.assertEqual(self.paperclip.created, [])
+        self.assertEqual(self.slack.sent, [])
+
+    def test_late_page_errors_and_invalid_member_ids_never_accept_partial_membership(self):
+        limited = RuntimeError(SENTINEL)
+        limited.response = SimpleNamespace(status_code=429)
+        for index, (page, code) in enumerate((
+                ({"ok": True, "members": ["malformed-member-id"],
+                  "response_metadata": {"next_cursor": ""}}, "slack_membership_invalid"),
+                ({"ok": True, "members": ["UTESTNEW"]}, "slack_membership_invalid"),
+                (limited, "slack_rate_limited"),
+                (TimeoutError(SENTINEL), "slack_membership_unavailable"))):
+            self.slack.pages = {
+                "": {"ok": True, "members": ["UTESTHUMAN", "UTESTBOT"],
+                     "response_metadata": {"next_cursor": "page-2"}},
+                "page-2": page,
+            }
+            with self.assertRaises(Refused) as error:
+                self.bridge.gate.check("UTESTHUMAN")
+            self.assertEqual(error.exception.code, code)
+            self.queue(event_id="event-" + str(index), thread=f"{1700000000 + index}.000001")
+            self.bridge.work_once()
+        self.assertEqual(self.paperclip.created, [])
+        self.assertEqual(self.slack.sent, [])
+
+    def test_policy_binding_is_explicit_and_cannot_be_changed_on_existing_ledger(self):
+        with self.assertRaises(Refused):
+            self.store.bind(replace(self.config, access_mode="allowlist",
+                                    allowed_user_ids=frozenset({"UTESTHUMAN"})))
+        values = [getattr(self.config, key) for key in (
+            "workspace_id", "app_id", "bot_user_id", "bot_id", "channel_id",
+            "company_id", "company_prefix", "paperclip_api_url", "paperclip_public_url")]
+        values.append([])
+        legacy_empty_digest = hashlib.sha256(json.dumps(values).encode("utf-8")).hexdigest()
+        actual = self.store.db.execute("SELECT digest FROM binding").fetchone()[0]
+        self.assertNotEqual(actual, legacy_empty_digest)
+        values.append({"access_mode": "channel_members"})
+        self.assertEqual(actual, hashlib.sha256(json.dumps(values).encode("utf-8")).hexdigest())
+
+
 class EntrypointTests(unittest.TestCase):
+    def test_access_mode_is_optional_and_rejects_ambiguous_or_malformed_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = config_data(directory)
+            legacy = Config.parse(data)
+            self.assertEqual(legacy.access_mode, "allowlist")
+            self.assertEqual(legacy, Config.parse({**data, "access_mode": "allowlist"}))
+            self.assertEqual(Config(**{
+                key: getattr(legacy, key) for key in Config.__dataclass_fields__ if key != "access_mode"
+            }), legacy)
+            self.assertEqual(Config.parse({
+                **data, "access_mode": "channel_members", "allowed_user_ids": [],
+            }).allowed_user_ids, frozenset())
+            for change in (
+                    {"access_mode": "unknown"}, {"access_mode": None},
+                    {"access_mode": True}, {"access_mode": []},
+                    {"access_mode": {}}, {"allowed_user_ids": []},
+                    {"access_mode": "channel_members"},
+                    {"access_mode": "channel_members", "allowed_user_ids": ["UTESTBOT"]},
+                    {"access_mode": "channel_members", "allowed_user_ids": None},
+                    {"access_mode": "channel_members", "allowed_user_ids": {}},
+                    {"allowed_user_ids": ["not-a-user-id"]}):
+                with self.subTest(change=change), self.assertRaises(Refused):
+                    Config.parse({**data, **change})
+            for mode in ("allowlist", "channel_members"):
+                missing = {**data, "access_mode": mode}
+                del missing["allowed_user_ids"]
+                with self.assertRaises(Refused):
+                    Config.parse(missing)
+
+    def test_default_mode_preserves_legacy_ledger_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Config.parse(config_data(directory))
+            values = [getattr(config, key) for key in (
+                "workspace_id", "app_id", "bot_user_id", "bot_id", "channel_id",
+                "company_id", "company_prefix", "paperclip_api_url", "paperclip_public_url")]
+            values.append(sorted(config.allowed_user_ids))
+            legacy_digest = hashlib.sha256(json.dumps(values).encode("utf-8")).hexdigest()
+            store = Store(config.state_path)
+            try:
+                with store.transaction() as db:
+                    db.execute("INSERT INTO binding VALUES (1,?)", (legacy_digest,))
+                store.bind(config)
+                store.bind(replace(config, access_mode="allowlist"))
+                self.assertEqual(store.db.execute("SELECT digest FROM binding").fetchone()[0],
+                                 legacy_digest)
+                with self.assertRaises(Refused):
+                    store.bind(replace(config, access_mode="channel_members",
+                                       allowed_user_ids=frozenset()))
+            finally:
+                store.close()
+
     def invoke_preflight(self, command="check", slack=None, config_change=None,
                          credentials=True, dependency=True, web_error=None,
                          paperclip_error=None, gate_error=None):
@@ -630,6 +820,43 @@ class EntrypointTests(unittest.TestCase):
 
     def assert_diagnostic(self, code, **kwargs):
         self.assertEqual(self.invoke_preflight(**kwargs), (1, "", "preflight_failed:" + code + "\n"))
+
+    def test_empty_dynamic_allowlist_never_skips_startup_privacy_or_bot_membership_gate(self):
+        policy = {"access_mode": "channel_members", "allowed_user_ids": []}
+        slack = Slack()
+        slack.pages[""]["members"].append("UTESTNEW")
+        self.assertEqual(self.invoke_preflight(slack=slack, config_change=policy),
+                         (0, "preflight_ok_read_only\n", ""))
+        self.assertEqual(slack.member_calls, [""])
+        for change, code in (
+                (lambda s: s.channel.update(is_private=False), "slack_channel_not_private"),
+                (lambda s: s.channel.update(is_shared=True), "slack_channel_not_safe"),
+                (lambda s: s.channel.pop("is_archived"), "slack_channel_metadata_invalid"),
+                (lambda s: s.pages[""].update(members=["UTESTHUMAN"]),
+                 "slack_channel_not_member")):
+            slack = Slack()
+            change(slack)
+            self.assert_diagnostic(code, slack=slack, config_change=policy)
+            self.assertEqual(self.invoke_preflight(
+                command="run", slack=slack, config_change=policy),
+                (1, "", "bridge_failed_closed\n"))
+
+    def test_allowlist_startup_uses_one_snapshot_and_checks_every_configured_requester(self):
+        slack = Slack()
+        slack.pages[""]["members"].append("UTESTOTHER")
+        policy = {"allowed_user_ids": ["UTESTHUMAN", "UTESTOTHER"]}
+        self.assertEqual(self.invoke_preflight(slack=slack, config_change=policy),
+                         (0, "preflight_ok_read_only\n", ""))
+        self.assertEqual(slack.member_calls, [""])
+        slack.pages[""]["members"].remove("UTESTOTHER")
+        self.assert_diagnostic("slack_requester_not_member", slack=slack, config_change=policy)
+
+    def test_membership_mode_keeps_exact_manifest_scopes_and_subscription(self):
+        manifest = json.loads((SOURCE / "manifest.json").read_text())
+        self.assertEqual(manifest["oauth_config"]["scopes"]["bot"],
+                         ["app_mentions:read", "chat:write", "groups:read"])
+        self.assertEqual(manifest["settings"]["event_subscriptions"]["bot_events"],
+                         ["app_mention"])
 
     def test_check_phase_failures_have_only_fixed_single_line_codes(self):
         for code, kwargs in (

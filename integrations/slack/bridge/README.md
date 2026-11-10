@@ -15,19 +15,22 @@ Paperclip separately. Publishing this code grants none of those permissions.
 ## Fixed pilot boundary
 
 - One expected workspace, Slack app, authenticated bot user/bot ID, and one
-  private, nonshared pilot channel; explicit human ID allowlist.
+  private, nonshared pilot channel; an explicitly approved access policy below.
 - Subscribe **only** to `app_mention`, not messages, DMs, history, files, search,
   or automatic thread follow-ups. Require an explicit literal bot mention on
-  every accepted event. Reject the bot's own, bot-authored, and subtyped events.
+  every accepted event. Reject the bot's own events and events marked as
+  bot-authored or subtyped.
 - Each event's workspace, app ID, and bot authorization must match the private
   configuration. `auth.test` binds the Web API token to the configured workspace,
   bot user, and bot ID. Operators must verify that these IDs describe the same
   installed app, not merely copy IDs from an untrusted request.
 - Before every proposal creation or Slack publication, recheck identity,
   channel privacy/archive/membership/sharing flags, and **all** membership pages.
-  Members must be a subset of allowlisted humans plus this bot; the requester
-  and bot must be present. Missing fields, unknown members, rate limits, and
-  API errors refuse the action. `groups:read` exists only for these checks.
+  The requester and bot must be present. In default allowlist mode, all members
+  must be allowlisted humans plus this bot. In opt-in channel-members mode,
+  current membership defines the approved audience. Missing/invalid data,
+  incomplete pagination, rate limits, and API errors refuse the action.
+  `groups:read` exists only for these checks.
 - An incoming mention is untrusted data, bounded to 4,096 Unicode characters /
   16,384 UTF-8 bytes. It is placed inside a labeled untrusted description, never
   executed or fetched. Request links and attachments are not retrieved.
@@ -44,6 +47,49 @@ Paperclip separately. Publishing this code grants none of those permissions.
   gate. Spent receipts trigger no extra send gate. A `done`/`cancelled` delivery
   attempt, including an uncertain or rate-limited attempt, durably stops polling
   that proposal; its thread ledger remains available for fixed references.
+
+### Access policy: allowlist or current channel members
+
+`access_mode` is optional and defaults to `"allowlist"` for old JSON and code
+callers. `allowed_user_ids` remains required in both modes:
+
+| Mode | Required `allowed_user_ids` | Audience and request eligibility |
+| --- | --- | --- |
+| `"allowlist"` (default) | 1–50 distinct approved human IDs, excluding this bot | Every channel member must be on that list or be this bot; a requester must be listed and currently present. New/unexpected members fail closed. |
+| `"channel_members"` (explicit opt-in) | Exactly `[]` | All current channel members form the approved audience. Valid-ID requesters must be present in a fresh complete membership snapshot; new members become eligible automatically and departed members are denied. |
+
+Keep the conservative policy in `config.example.json`, or, **after explicit
+approval of membership-as-access including future joins**, replace only these
+two fields in the private copy:
+
+```json
+{
+  "access_mode": "channel_members",
+  "allowed_user_ids": []
+}
+```
+
+This fragment is not a complete config. Unknown modes, missing IDs lists, and
+nonempty lists in channel-members mode are rejected rather than silently
+ignored. Dynamic access does not copy the live roster into configuration or
+broaden access beyond the one approved private/nonshared/nonarchived channel.
+People authorized to invite members now also control future bridge access and
+the audience for fixed Slack notices; review that authority and explain it to
+participants. Neither policy makes private Paperclip links accessible to
+everyone automatically.
+
+The callback cannot make network calls: channel-members mode durably queues
+syntactically valid target-channel mentions, then rejects nonmembers before
+proposal creation/publication. Fresh membership is checked again before every
+actual Slack post, including a departure after creation. Status reads/posts
+are skipped while the original requester is no longer a member. Snapshots are
+not atomic membership locks; the existing race limitations still apply.
+
+Membership can include other Slack apps. Channel-members mode accepts their
+valid member IDs as part of the channel audience, **not** as permission to
+submit bot-authored requests. Own/bot-marked/subtyped events remain rejected.
+No `users.info` classification is performed or claimed; no `users:read`,
+history, search, extra endpoint, or dependency is added.
 
 ### Paperclip field and automation boundary
 
@@ -91,10 +137,11 @@ guaranteed pure.
    visibility, and absence of independent execution triggers.
 
    An existing private coordination channel is supported; a new two-person
-   channel is only an optional small pilot. Explicitly approve every human
-   member's ID, not just the setup operator's. The same allowlist also permits
-   those people to queue proposals. Do not silently approve new members or
-   unexpected apps merely to make validation pass.
+   channel is only an optional small pilot. Approve the access policy, not just
+   the setup operator. Default allowlist mode requires approval of every human
+   member's ID and rejects unexpected members/apps. Channel-members mode
+   instead requires explicit approval that current **and future** members
+   define access. Do not switch policies merely to suppress a validation error.
 
 2. Review `manifest.json`. Bot scopes are exactly `app_mentions:read`,
    `chat:write`, `groups:read`; bot event exactly `app_mention`. Separately
@@ -119,7 +166,8 @@ guaranteed pure.
    required by this implementation (the SDK's minimum is not the bridge's).
 5. Make a **private copy** of `config.example.json` outside the repository.
    Every example ID/UUID, hostname, and uppercase path placeholder is synthetic.
-   Supply all fields; unknown fields are rejected. Set `integration_approved`
+   Supply the required fields; `access_mode` alone is optional and defaults to
+   `"allowlist"`. Unknown fields are rejected. Set `integration_approved`
    to literal `true` only after approval. The example deliberately refuses run.
    The config must be a regular single-link file: service-euid-owned `0600`,
    or root-owned `0640` with the nonroot service's effective group as its group.
@@ -143,8 +191,10 @@ guaranteed pure.
    The entry point works with `-I` and does not depend on the current directory.
    `check` validates config and makes live preflight API reads; it does **not**
    open/create a SQLite DB or lock, connect Socket Mode, create a proposal,
-   or publish Slack messages. All allowlisted humans must be current members
-   for initial preflight. Run only after the operator authorizes live access.
+   or publish Slack messages. Initial preflight always checks one complete
+   channel snapshot, including in channel-members mode with its empty IDs list;
+   all allowlisted humans must also be present in allowlist mode. Run only
+   after the operator authorizes live access.
    `run` rechecks, takes a single-process lock, recovers durable state, and
    connects Socket Mode. Stop the service to disable it; revoke tokens if
    necessary. Logs contain only fixed diagnostic codes, not exception bodies.
@@ -177,8 +227,8 @@ token or a live mention roundtrip.
 | `slack_channel_not_member` | Have an authorized human add the correct installed bot to the approved channel. |
 | `slack_channel_not_safe` | The channel is archived or shared; use an approved nonarchived, nonshared private pilot. |
 | `slack_channel_metadata_invalid` | Required privacy/safety metadata was missing or malformed; review API compatibility without bypassing the gate. |
-| `slack_member_not_allowed` | Stop and review the complete channel audience against the approved human allowlist plus bot. Do not automatically allow an unexpected member. |
-| `slack_requester_not_member` | Verify each configured allowed requester is currently in the pilot channel; preflight checks them all. |
+| `slack_member_not_allowed` | In allowlist mode, review the complete audience against approved humans plus bot; do not automatically approve an unexpected member. Access-policy changes require separate approval. |
+| `slack_requester_not_member` | Verify the requester is currently in the pilot channel; allowlist preflight checks every configured requester. |
 | `slack_membership_unavailable` | Membership lookup failed or could not complete; review authorized API availability/access before trying again. |
 | `slack_membership_invalid` | Membership or pagination data was incomplete/malformed; never accept a partial list. |
 | `slack_rate_limited` | Stop repeated checks and retry later under operator control; do not weaken checks or blindly retry writes. |
@@ -198,8 +248,12 @@ The Socket Mode callback commits the syntactically accepted event before
 acknowledging its envelope. An asynchronous main-loop worker performs all
 external checks and requests. SQLite deduplicates envelope IDs, event IDs,
 threads, and status-notification receipts. The private ledger is bound to the
-workspace/app/bot/channel/company/URLs/allowlist; reusing it with a changed
-binding fails closed. Do not discard the ledger to bypass that protection.
+workspace/app/bot/channel/company/URLs/access policy; reusing it with a changed
+binding fails closed. Default/explicit allowlist preserves the legacy binding
+digest. Channel-members mode adds an explicit policy marker, not a live roster;
+ordinary joins/leaves do not change that binding. Changing policies requires
+stopping and reviewing existing state offline, never silently rebinding or
+discarding the ledger to bypass that protection.
 
 Creation states: `pending → creating → created | uncertain | rate_limited`;
 gate/expiry failures become `rejected`. Delivery states:
@@ -249,7 +303,8 @@ Coverage includes identity/privacy gates, complete two-page membership,
 durable-before-ack, replay/thread dedupe, text erasure, crash/ambiguous POST
 holds, rate limits, exact proposal fields, automation drift, fixed-only status
 posts, bounded polling/terminal retirement, FIFO-independent expiry, private DB
-binding, and preflight without state writes.
+binding, both access policies and joins/departures, backward-compatible default
+binding, and preflight without state writes even with an empty dynamic IDs list.
 
 These checks do not establish OS/service isolation, filesystem crash durability
 under power loss, Slack reconnect behavior, live installed scopes/API contracts,

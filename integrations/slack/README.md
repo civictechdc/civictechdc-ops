@@ -25,6 +25,22 @@ in an already tracked thread does not silently modify an assigned task.
 Offline tests use synthetic data and a network-isolated runner; a real app
 installation, audience check, and mention/status roundtrip are still required.
 
+### Access policy
+
+The bridge defaults to an explicit user allowlist. An operator can instead
+approve `access_mode: "channel_members"` with `allowed_user_ids: []`: all
+current and future members of the one selected private channel become eligible
+to queue proposals. Slack channel membership then controls access; people
+managing invitations/removals manage this grant. A manual member list is not
+maintained or silently expanded.
+
+Both policies require fresh, complete membership checks before task creation
+and each publication, reject bot-authored requests, and retain the private,
+nonshared-channel boundary. Channel-members access grants no mailbox,
+dashboard, assignment, worker-execution or general publishing permissions.
+Other apps already in the channel may see notices under their existing Slack
+permissions. A separate email-review audience still needs its own approval.
+
 ### Ownership and routing
 
 Keep Slack transport and authorization at the shared coordination layer:
@@ -74,7 +90,7 @@ every Slack participant can open them.
 
 ## Broader support workflow — proposed
 
-1. Choose one approved channel and a small explicit user allowlist.
+1. Choose one approved channel and an explicitly approved access policy.
 2. For interactive chat, reply only to explicit mentions in the initiating
    thread. Require a new mention for a follow-up; do not silently monitor
    ordinary conversation.
@@ -133,8 +149,9 @@ For the implemented private-channel proposal pilot, the app contract is:
 | Bot event `app_mention` | Deliver mentions, not all channel messages. |
 
 An authorized installer must install the app with required workspace approval
-and explicitly add it to the pilot channel. Use channel and user IDs for
-runtime allowlists; keep actual IDs outside this public repository.
+and explicitly add it to the pilot channel. Configure its exact channel ID and
+choose the reviewed access policy: explicit user IDs or channel membership.
+Keep actual IDs outside this public repository.
 
 The bot token and app-level token must be supplied through a protected
 credential channel. Do not paste them into chat, public examples, command

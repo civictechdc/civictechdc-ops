@@ -67,11 +67,16 @@ class Config:
     state_path: str
     poll_interval_seconds: int
     integration_approved: bool
+    access_mode: str = "allowlist"
 
     @classmethod
     def parse(cls, data):
         try:
-            if set(data) != set(cls.__dataclass_fields__):
+            required = set(cls.__dataclass_fields__) - {"access_mode"}
+            if not required <= set(data) or set(data) - required - {"access_mode"}:
+                raise Refused()
+            mode = data.get("access_mode", "allowlist")
+            if type(mode) is not str or mode not in ("allowlist", "channel_members"):
                 raise Refused()
             for key, prefix in (("workspace_id", "T"), ("app_id", "A"),
                                 ("bot_user_id", "[UW]"), ("bot_id", "B"),
@@ -79,10 +84,13 @@ class Config:
                 if not identifier(data[key], prefix):
                     raise Refused()
             humans = data["allowed_user_ids"]
-            if (not isinstance(humans, list) or not 1 <= len(humans) <= 50
-                    or any(not identifier(u, "[UW]") for u in humans)
-                    or len(set(humans)) != len(humans)
-                    or data["bot_user_id"] in humans):
+            if not isinstance(humans, list):
+                raise Refused()
+            if mode == "channel_members" and humans != []:
+                raise Refused()
+            if mode == "allowlist" and (
+                    not 1 <= len(humans) <= 50 or any(not identifier(u, "[UW]") for u in humans)
+                    or len(set(humans)) != len(humans) or data["bot_user_id"] in humans):
                 raise Refused()
             company = str(UUID(data["company_id"]))
             if not re.fullmatch(r"[A-Z][A-Z0-9]{1,15}", data["company_prefix"]):
@@ -104,7 +112,7 @@ class Config:
                 paperclip_api_url=base_url(data["paperclip_api_url"], api=True),
                 paperclip_public_url=base_url(data["paperclip_public_url"]),
                 state_path=data["state_path"], poll_interval_seconds=interval,
-                integration_approved=True,
+                integration_approved=True, access_mode=mode,
             )
         except (ValueError, TypeError, KeyError, AttributeError):
             raise Refused() from None

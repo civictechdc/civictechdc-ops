@@ -103,8 +103,9 @@ def main():
         phase = "validation_failed"
         slack = WebClient(token=bot_token, retry_handlers=[], timeout=10, logger=logger)
         # Read-only preflight. "check" never opens the DB or lock file, or socket.
-        for requester in sorted(config.allowed_user_ids):
-            Gate(config, slack).check(requester)
+        members = Gate(config, slack).snapshot()
+        if not config.allowed_user_ids <= members:
+            raise Refused("slack_requester_not_member")
         phase = "paperclip_preflight_failed"
         paperclip = Paperclip(config)
         paperclip.check_safe()
