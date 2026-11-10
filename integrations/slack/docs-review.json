@@ -123,5 +123,41 @@
       "metadata_url": "https://pypi.org/pypi/slack-sdk/3.46.0/json",
       "wheel_sha256": "6286d89da97ea193c853609131515e6f1b3edf86866d6e5aad0dba9dcf1cb72d"
     }
+  },
+  "conversation_review": {
+    "reviewed_at_utc": "2026-11-10T17:40:17.088187+00:00",
+    "method": "Direct HTTPS retrieval of official public sources; documentation provenance only, no workspace data or deployment inventory. Worker runtime must be qualified separately.",
+    "sources": [
+      {
+        "url": "https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html",
+        "status": 200,
+        "bytes": 70010,
+        "sha256": "14668347e82c1d84a6cc0376d1d7586a021853dd6becf7c98dfbd73093eec1da"
+      },
+      {
+        "url": "https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html",
+        "status": 200,
+        "bytes": 386539,
+        "sha256": "a1710bc7b196f3fbdb072661791503a4117f6d980036d9b6063ac11e1f952fe1"
+      },
+      {
+        "url": "https://docs.slack.dev/reference/methods/chat.postMessage/",
+        "status": 200,
+        "bytes": 111316,
+        "sha256": "d7acecb01e569033b5ea84164091b744390b22ab86255c8397f7a13d63c478ff"
+      },
+      {
+        "url": "https://docs.slack.dev/messaging/formatting-message-text/",
+        "status": 200,
+        "bytes": 125436,
+        "sha256": "237f532c7917df1eccf4b9f8d770ffa20d0a06adbf6a59d3082ff306b9280dae"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/74b2ed65e6564bfcafd29236e5fab2447a68fc76/agent/safe_worker_policy.py",
+        "status": 200,
+        "bytes": 3265,
+        "sha256": "f0759f0868f402d5aff6007303ad503e3d3d92999ed01693037bc8f07b4a2738"
+      }
+    ]
   }
 }

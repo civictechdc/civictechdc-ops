@@ -1,8 +1,9 @@
 # Slack integration
 
-**Status:** experimental proposal-intake bridge available; live Slack access
-unqualified. Conversational assistance and email alerts remain proposals.
-**Reviewed:** November 5, 2026. **Maintaining role:** unassigned.
+**Status:** experimental proposal bridge with opt-in conversational routing.
+A separately qualified restricted worker is required for conversation; email
+alerts remain proposed. Live installations require their own acceptance checks.
+**Reviewed:** November 10, 2026. **Maintaining role:** unassigned.
 **Provenance:** official Slack documentation, the published Paperclip
 2026.1023.0 API contract, and the Hermes source snapshot linked below.
 This public library is not a deployment inventory or workspace approval.
@@ -10,7 +11,7 @@ This public library is not a deployment inventory or workspace approval.
 ## Available pilot
 
 The [Socket Mode bridge](bridge/README.md) and
-[app manifest](bridge/manifest.json) implement a deliberately small first step:
+[app manifest](bridge/manifest.json) retain proposal-only mode by default:
 
 1. An explicit mention from an allowed person in one approved private channel
    becomes a **private, unassigned backlog proposal** in Paperclip.
@@ -19,23 +20,60 @@ The [Socket Mode bridge](bridge/README.md) and
 3. The bridge can post fixed status notices back to the originating thread.
    It never relays worker comments, drafts, descriptions, or arbitrary output.
 
-The bridge does not run Hermes or another model, assign agents, read message
-history, follow links, fetch files, send DMs, or access email. A further mention
-in an already tracked thread does not silently modify an assigned task.
+Optional `interaction_mode: "conversation"` instead routes normal mentions to
+a separately deployed, restricted coordinator over authenticated local Unix
+IPC. It replies in the originating thread without making a Paperclip issue.
+An explicit human `@bot task: ...` still queues a private, unassigned proposal.
+Neither model output nor an ordinary follow-up can assign an agent or silently
+modify an assigned task.
+
+The bridge has no in-process model or execution tools. It does not read Slack
+history, follow links, fetch files, send DMs, or access email. See the
+[coordinator contract](bridge/COORDINATOR.md) for the required no-tools,
+stateless worker, bounded protocol, and deployment qualification.
 Offline tests use synthetic data and a network-isolated runner; a real app
 installation, audience check, and mention/status roundtrip are still required.
+
+### Conversational pilot
+
+Enabling conversation is a separate approval, not a consequence of channel
+membership or having installed the app. Disclose the selected model/provider,
+processing of explicitly mentioned text, limited retained context, usage
+limits, and how to disable the bot before enabling it.
+
+- Every turn requires an explicit mention, including follow-ups in a thread.
+- Each request receives at most three recent, successfully sent user/assistant
+  pairs from that same thread. Successful pairs are retained locally for a
+  24-hour window and removed by the next expiry sweep; this is not a three-pair
+  storage cap or a deletion guarantee for Slack, providers or backups. No Slack
+  history is read.
+- A fresh complete membership check precedes generation and publication.
+  Departed contributors invalidate retained context; contributors used for a
+  generated reply must still be present at publication.
+- Durable limits are 10 model turns per person/hour, 30 total/hour, and 100/day,
+  with one controller invocation at a time. These are not a dollar budget or
+  a guarantee about an arbitrary worker's internal provider retries.
+- The worker receives only text and bounded history—not Slack tokens, routing
+  IDs, runtime configuration, or permission to execute tools. Its no-tools,
+  no-memory/no-profile behavior must be qualified independently.
+- Generated content is escaped before posting as plain text with a draft/advice
+  label. It is not an approval, a commitment, or evidence an outside action ran.
+
+The public bridge provides routing and an RPC client, not a Hermes installer
+or a complete worker deployment. A separate account/process alone is not proof
+of confinement; verify the actual native runtime and OS protections.
 
 ### Access policy
 
 The bridge defaults to an explicit user allowlist. An operator can instead
 approve `access_mode: "channel_members"` with `allowed_user_ids: []`: all
 current and future members of the one selected private channel become eligible
-to queue proposals. Slack channel membership then controls access; people
+for its explicitly configured interaction mode. Slack membership controls access; people
 managing invitations/removals manage this grant. A manual member list is not
 maintained or silently expanded.
 
-Both policies require fresh, complete membership checks before task creation
-and each publication, reject bot-authored requests, and retain the private,
+Both policies require fresh, complete membership checks before model use, task
+creation and each publication, reject bot-marked requests, and retain the private,
 nonshared-channel boundary. Channel-members access grants no mailbox,
 dashboard, assignment, worker-execution or general publishing permissions.
 Other apps already in the channel may see notices under their existing Slack
@@ -50,10 +88,12 @@ Keep Slack transport and authorization at the shared coordination layer:
 | Organization/coordinator | App ownership, protected credentials, authorization, delivery, and receipts. |
 | Channel/project | Approved audience and routing; not workspace-wide access. |
 | Task/thread | One tracked request and its review/status links. |
-| Worker | Bounded work after organizer review; no Slack app token in its environment. |
+| Restricted coordinator | Automatic advice/drafts in its originating thread; no tools or Slack token. |
+| Engineer/other powerful worker | Bounded work after organizer review; no Slack app token in its environment. |
 
 Paperclip remains the task record. The bridge's private database holds transport
-receipts and pending intake, not a second agent/task-management system.
+receipts, pending intake, and limited short-lived conversation context—not a
+second task-management system or an institutional-memory archive.
 Reusable source and instructions belong here; live credentials, IDs, message
 content, and deployment automation do not.
 
@@ -76,19 +116,19 @@ Use Slack as a convenient support/intake surface, this repository as the shared
 support library, and Paperclip as a task/review record. A restricted worker can
 prepare requested outputs after the appropriate human review.
 
-Examples for the broader, still-proposed support workflow:
+Examples for restricted conversational support:
 
 - Find the project-brief template or explain a documented workflow.
 - Prepare draft event copy from confirmed inputs.
 - Propose a small project task for a maintainer to review.
-- Receive an explicitly configured email-needs-reply alert, with a draft ready
-  for an authorized reviewer.
+- Separately proposed: an explicitly configured email-needs-reply alert, with
+  a draft ready for an authorized reviewer.
 
 Do not require volunteers to use a new task system merely to participate.
 Deployment-specific Paperclip links may require separate access; do not assume
 every Slack participant can open them.
 
-## Broader support workflow — proposed
+## Support workflow and remaining boundaries
 
 1. Choose one approved channel and an explicitly approved access policy.
 2. For interactive chat, reply only to explicit mentions in the initiating
@@ -111,9 +151,10 @@ credentials, files, or administrative access. Treat message text, links, and
 attachments as untrusted input. Use a reviewed isolation boundary; a separate
 process or profile on the same account alone is not a security boundary.
 
-Only the narrow proposal-intake handoff above is implemented. Conversational
-answers, public-project channels, tool-enabled execution from Slack, and
-automatic publication require additional implementation and review.
+Proposal intake and optional bounded conversational routing are implemented.
+The generator is a separately qualified deployment dependency. Public-project
+channels, tool-enabled execution from Slack, general arbitrary publication,
+and mailbox integration remain outside this pilot.
 
 ## Proactive email alerts
 
@@ -138,7 +179,7 @@ Use an approved internal Slack app with **Socket Mode**: events arrive over an
 outbound WebSocket, so this does not require exposing a public HTTP request URL
 or making a task dashboard public.
 
-For the implemented private-channel proposal pilot, the app contract is:
+For either implemented private-channel mode, the app contract is:
 
 | Setting | Purpose |
 | --- | --- |

@@ -25,6 +25,7 @@ sys.modules[_spec.name] = _package
 _spec.loader.exec_module(_package)
 from _approval_slack_bridge.config import Config, PREFLIGHT_CODES, Refused  # noqa: E402
 from _approval_slack_bridge.core import Bridge, Gate  # noqa: E402
+from _approval_slack_bridge.coordinator import Coordinator  # noqa: E402
 from _approval_slack_bridge.paperclip import Paperclip  # noqa: E402
 from _approval_slack_bridge.store import Store  # noqa: E402
 
@@ -109,6 +110,11 @@ def main():
         phase = "paperclip_preflight_failed"
         paperclip = Paperclip(config)
         paperclip.check_safe()
+        coordinator = None
+        if config.interaction_mode == "conversation":
+            phase = "validation_failed"
+            coordinator = Coordinator(config.coordinator_socket)
+            coordinator.check()  # Stat only; preflight never connects or invokes a model.
         if args.command == "check":
             print("preflight_ok_read_only")
             return 0
@@ -117,7 +123,7 @@ def main():
         store = Store(config.state_path)
         store.bind(config)
         store.recover()
-        bridge = Bridge(config, store, slack, paperclip)
+        bridge = Bridge(config, store, slack, paperclip, coordinator=coordinator)
         socket_client = SocketModeClient(
             app_token=app_token, web_client=slack, logger=logger)
         socket_client.socket_mode_request_listeners.append(
@@ -126,7 +132,8 @@ def main():
         socket_client.connect()
         next_poll = time.monotonic() + config.poll_interval_seconds
         stopped = threading.Event()
-        print("bridge_running_proposal_only", flush=True)
+        print("bridge_running_conversation" if coordinator is not None
+              else "bridge_running_proposal_only", flush=True)
         while not stopped.is_set():
             worked = bridge.work_once()
             if time.monotonic() >= next_poll:

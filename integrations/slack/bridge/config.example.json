@@ -5,6 +5,8 @@
   "bot_id": "BTEST01",
   "channel_id": "CTEST01",
   "access_mode": "allowlist",
+  "interaction_mode": "proposal",
+  "coordinator_socket": "",
   "allowed_user_ids": ["UTESTHUMAN"],
   "company_id": "00000000-0000-4000-8000-000000000001",
   "company_prefix": "TEST",

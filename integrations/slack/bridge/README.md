@@ -3,14 +3,17 @@
 **Status:** experimental reusable coordination-layer code, not organizational
 approval or a deployment. **Maintaining role:** unassigned.
 **Reviewed:** November 5, 2026. **Inputs:** restricted Slack mentions.
-**Outputs:** private unassigned backlog proposals and fixed threaded notices.
+**Outputs:** private unassigned backlog proposals and fixed threaded notices;
+explicitly opted-in conversation mode adds restricted draft/advice replies.
 Only synthetic offline checks accompany this code; they prove no live Slack
 installation, membership, transport, or Paperclip permission behavior.
 
-This is **not** a Hermes gateway, autonomous assistant, or worker. There is no
-LLM, shell, subprocess, email, link-fetching, issue-comment, assignment, or
-agent-execution interface. A human reviews, moves, and assigns a proposal in
-Paperclip separately. Publishing this code grants none of those permissions.
+This is **not** a Hermes gateway or autonomous worker. There is no shell,
+subprocess, email, link-fetching, issue-comment, assignment, or agent-execution
+interface. Default proposal mode makes no model calls. Separately approved
+conversation mode uses only bounded Unix RPC to a restricted coordinator, not
+a model SDK or unrestricted worker. Humans still review, move, and assign
+tasks separately in Paperclip. Publishing code grants none of those permissions.
 
 ## Fixed pilot boundary
 
@@ -34,13 +37,15 @@ Paperclip separately. Publishing this code grants none of those permissions.
 - An incoming mention is untrusted data, bounded to 4,096 Unicode characters /
   16,384 UTF-8 bytes. It is placed inside a labeled untrusted description, never
   executed or fetched. Request links and attachments are not retrieved.
-- At most one proposal per thread. Subsequent explicit mentions may receive
-  only a fixed reference to the existing proposal; their text is discarded.
-  They never append comments or new instructions to an assigned task.
-- Slack receives only a fixed acknowledgement/link or one fixed notification
-  per status (`in_review`, `done`, `blocked`, `cancelled`). Never post worker
-  comments, drafts, descriptions, or other enriched issue content. Disable
-  Markdown interpretation and link/media unfurls on every send.
+- At most one proposal per thread. Additional proposal requests receive only a
+  fixed reference; their text is discarded, never appended to an assigned task.
+  Conversation turns are separate from proposals, including in a thread with
+  an existing legacy issue.
+- The proposal path publishes only fixed acknowledgement/links and one fixed
+  notification per status (`in_review`, `done`, `blocked`, `cancelled`), never
+  Paperclip worker comments, drafts, descriptions, or enriched issue content.
+  Approved conversation replies are bounded, escaped draft/advice only.
+  Disable Markdown, automatic name expansion, and unfurls on every send.
 - Poll at most ten active proposals per interval with durable fair rotation.
   Each batch gets one fresh complete membership snapshot and checks each
   requester's presence; every actual publication still gets its own fresh full
@@ -90,6 +95,42 @@ valid member IDs as part of the channel audience, **not** as permission to
 submit bot-authored requests. Own/bot-marked/subtyped events remain rejected.
 No `users.info` classification is performed or claimed; no `users:read`,
 history, search, extra endpoint, or dependency is added.
+
+### Interaction policy: proposal or conversation
+
+The optional `interaction_mode` defaults to `"proposal"`: every accepted mention
+keeps the original backlog-proposal behavior. `coordinator_socket` defaults to
+`""` and must remain empty in this mode. Old JSON, constructors, proposal
+records, receipts, and access-policy binding digests continue to work.
+
+After separate approval of automatic restricted advice, a private config may
+instead include:
+
+```json
+{
+  "interaction_mode": "conversation",
+  "coordinator_socket": "/run/EXAMPLE-COORDINATOR.sock"
+}
+```
+
+The path is a synthetic example, not a deployed service. Conversation mode:
+
+- An explicit mention normally produces one draft/advice response in **that
+  same thread**, without contacting Paperclip for the conversation.
+- If human text immediately after the first bot mention (ignoring whitespace)
+  starts with exact lowercase `task:`, it uses the existing private, unassigned
+  backlog proposal path and fixed acknowledgement. Model output never selects
+  this route or authorizes work. Agent assignment remains a separate human step.
+- Ordinary mentions in a thread with an existing legacy issue are conversations,
+  not repeated issue/reference acknowledgements. Legacy events are never
+  reinterpreted, replayed into a model, cancelled, or auto-assigned.
+- Follow-ups still require a new explicit mention. There are no history/message
+  subscriptions, Slack history reads, or automatic conversational monitoring.
+
+See the [coordinator boundary and RPC contract](COORDINATOR.md) for required
+root-owned socket isolation, strict wire/retention/call limits, uncertainty
+holds, history privacy, and independent restricted-worker requirements.
+Installing this source neither starts a coordinator nor grants live access.
 
 ### Paperclip field and automation boundary
 
@@ -166,8 +207,9 @@ guaranteed pure.
    required by this implementation (the SDK's minimum is not the bridge's).
 5. Make a **private copy** of `config.example.json` outside the repository.
    Every example ID/UUID, hostname, and uppercase path placeholder is synthetic.
-   Supply the required fields; `access_mode` alone is optional and defaults to
-   `"allowlist"`. Unknown fields are rejected. Set `integration_approved`
+   Supply the required fields; `access_mode`, `interaction_mode`, and
+   `coordinator_socket` are optional with conservative defaults described above.
+   Unknown fields are rejected. Set `integration_approved`
    to literal `true` only after approval. The example deliberately refuses run.
    The config must be a regular single-link file: service-euid-owned `0600`,
    or root-owned `0640` with the nonroot service's effective group as its group.
@@ -195,6 +237,8 @@ guaranteed pure.
    channel snapshot, including in channel-members mode with its empty IDs list;
    all allowlisted humans must also be present in allowlist mode. Run only
    after the operator authorizes live access.
+   Conversation preflight additionally **stats** the configured socket and its
+   parents; it never connects, activates the worker, or invokes a model.
    `run` rechecks, takes a single-process lock, recovers durable state, and
    connects Socket Mode. Stop the service to disable it; revoke tokens if
    necessary. Logs contain only fixed diagnostic codes, not exception bodies.
@@ -254,6 +298,10 @@ digest. Channel-members mode adds an explicit policy marker, not a live roster;
 ordinary joins/leaves do not change that binding. Changing policies requires
 stopping and reviewing existing state offline, never silently rebinding or
 discarding the ledger to bypass that protection.
+Interaction opt-in does not change this access-policy binding: chat capability
+is stamped only on new `chat_turns` rows. Legacy events retain their original
+proposal semantics and receipts. Disabling conversation rejects pending chat
+instead of interpreting it as a task.
 
 Creation states: `pending → creating → created | uncertain | rate_limited`;
 gate/expiry failures become `rejected`. Delivery states:
@@ -277,6 +325,10 @@ events are capped at 100; receipts/IDs/status metadata persist for deduplication
 and need operator-reviewed private retention/storage management. A disabled
 service cannot run the pending-text expiry job: keep the service down only
 with an operator-reviewed retention cleanup plan.
+Conversation pending text has a separate ten-minute eligibility window; only
+confirmed-SENT conversation pairs may be retained for up to 24 hours of local,
+same-thread history. The same running-process/no-hard-SLA and snapshot/backup
+caveats apply. See [the chat retention and rate limits](COORDINATOR.md).
 
 There is deliberately no reconciliation/reset command. If uncertain or
 rate-limited, stop and inspect private state and the receiving systems as an
@@ -305,6 +357,9 @@ holds, rate limits, exact proposal fields, automation drift, fixed-only status
 posts, bounded polling/terminal retirement, FIFO-independent expiry, private DB
 binding, both access policies and joins/departures, backward-compatible default
 binding, and preflight without state writes even with an empty dynamic IDs list.
+Conversation tests additionally cover RPC bounds/ownership, no model during
+preflight, task routing, history isolation/departures, escaping, persistent call
+caps, text expiry, crash holds, and preservation of pre-conversation ledgers.
 
 These checks do not establish OS/service isolation, filesystem crash durability
 under power loss, Slack reconnect behavior, live installed scopes/API contracts,

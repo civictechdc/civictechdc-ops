@@ -53,16 +53,18 @@ network isolation. See the integration README for dependencies and limitations.
 The Luma helper includes no write commands, event publishing, guest exports,
 invitations, scheduled jobs, or automatic account connections.
 
-The separate [Slack proposal pilot](integrations/slack/README.md) has an
-experimental, approval-first task-intake bridge. Its tests are also offline:
+The separate [Slack support pilot](integrations/slack/README.md) has an
+experimental task-intake bridge and opt-in conversational routing to a
+separately qualified restricted worker. Its tests are also offline:
 
 ```bash
 bash integrations/slack/bridge/tests/run-offline.sh
 ```
 
 Live use requires separately authorized app installation, private credentials,
-and audience/permission checks. It creates review proposals, not automatic
-worker runs or email responses.
+and audience/permission checks. Ordinary conversation can return bounded
+advice/drafts; explicit task requests create review proposals, not automatic
+Engineer runs or email responses. Conversation is disabled by default.
 
 ## Shared knowledge is not blanket permission
 

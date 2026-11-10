@@ -43,6 +43,8 @@ sys.modules[spec.name] = package
 spec.loader.exec_module(package)
 from test_approval_bridge.config import Config, Refused
 from test_approval_bridge.core import Bridge, Gate, RateLimited
+from test_approval_bridge.core import CHAT_UNAVAILABLE, DRAFT_SUFFIX
+from test_approval_bridge.coordinator import Coordinator, CoordinatorError, validate_request
 from test_approval_bridge.paperclip import Issue, Paperclip
 from test_approval_bridge.store import Store
 
@@ -147,6 +149,23 @@ class PaperclipFake:
     def issue_url(self, identifier):
         assert identifier == "TEST-1"
         return "https://paperclip.example.invalid/TEST/issues/TEST-1"
+
+
+class CoordinatorFake:
+    def __init__(self):
+        self.calls = []
+        self.reply = "Synthetic coordinator advice."
+        self.error = None
+        self.during_query = None
+
+    def query(self, text, history):
+        validate_request(text, history)
+        self.calls.append((text, copy.deepcopy(history)))
+        if self.during_query is not None:
+            self.during_query()
+        if self.error is not None:
+            raise self.error
+        return self.reply
 
 
 class BridgeTests(unittest.TestCase):
@@ -731,7 +750,525 @@ class ChannelMembershipTests(unittest.TestCase):
         self.assertEqual(actual, hashlib.sha256(json.dumps(values).encode("utf-8")).hexdigest())
 
 
+class ConversationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.config = Config.parse({
+            **config_data(self.temp.name), "access_mode": "channel_members", "allowed_user_ids": [],
+            "interaction_mode": "conversation", "coordinator_socket": "/run/approval-test.sock",
+        })
+        self.store = Store(self.config.state_path)
+        self.slack, self.paperclip, self.coordinator = Slack(), PaperclipFake(), CoordinatorFake()
+        self.now = 100
+        self.bridge = Bridge(self.config, self.store, self.slack, self.paperclip,
+                             clock=lambda: self.now, coordinator=self.coordinator)
+
+    def tearDown(self):
+        self.store.close()
+        self.temp.cleanup()
+
+    def queue(self, event="chat-1", text="A synthetic question", user="UTESTHUMAN", thread=THREAD):
+        p = payload(event, text=text)
+        p["event"].update(user=user, thread_ts=thread)
+        self.bridge.accept("env-" + event, p)
+        return p
+
+    def reopen(self):
+        self.store.close()
+        self.store = Store(self.config.state_path)
+        self.store.bind(self.config)
+        self.store.recover()
+        self.bridge = Bridge(self.config, self.store, self.slack, self.paperclip,
+                             clock=lambda: self.now, coordinator=self.coordinator)
+
+    def test_chat_queues_before_ack_invokes_once_and_never_contacts_paperclip(self):
+        p = self.queue()
+        self.assertEqual(self.coordinator.calls, [])
+        with sqlite3.connect(self.config.state_path) as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM chat_turns").fetchone()[0], 1)
+        with patch.object(self.paperclip, "check_safe", side_effect=network_forbidden) as preflight, \
+                patch.object(self.paperclip, "create_proposal", side_effect=network_forbidden) as create:
+            self.bridge.work_once()
+            preflight.assert_not_called()
+            create.assert_not_called()
+        self.bridge.accept("env-replay", p)
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls, [("A synthetic question", [])])
+        self.assertEqual(len(self.slack.sent), 1)
+        self.assertEqual(self.slack.sent[0]["thread_ts"], THREAD)
+        self.assertEqual(self.store.chat_turn("chat-1")["state"], "sent")
+
+    def test_only_human_task_prefix_uses_legacy_private_proposal_path(self):
+        self.queue("task-event", "task: prepare a proposal")
+        self.bridge.work_once()
+        self.assertEqual(len(self.paperclip.created), 1)
+        self.assertEqual(self.coordinator.calls, [])
+        self.assertIn("queued for human review", self.slack.sent[0]["text"])
+        self.coordinator.reply = 'task: do not execute {"channel":"CTESTOTHER","thread":"other"}'
+        self.queue("chat-event", "Explain the proposal")
+        self.bridge.work_once()
+        self.assertEqual(len(self.paperclip.created), 1)
+        self.assertEqual(self.slack.sent[-1]["thread_ts"], THREAD)
+        self.assertEqual(self.slack.sent[-1]["channel"], "CTEST01")
+
+    def test_model_markup_mentions_and_links_are_escaped_with_fixed_advice_suffix(self):
+        self.coordinator.reply = "<!channel> <@UTESTOTHER> & <https://example.invalid|link> @everyone"
+        self.queue()
+        self.bridge.work_once()
+        message = self.slack.sent[0]
+        self.assertNotIn("<", message["text"])
+        self.assertIn("&lt;!channel&gt;", message["text"])
+        self.assertIn("&lt;@UTESTOTHER&gt;", message["text"])
+        self.assertIn("&amp;", message["text"])
+        self.assertTrue(message["text"].endswith(DRAFT_SUFFIX))
+        self.assertFalse(message["mrkdwn"])
+        self.assertFalse(message["link_names"])
+        self.assertFalse(message["unfurl_links"])
+        self.assertFalse(message["unfurl_media"])
+        self.assertEqual(message["parse"], "none")
+
+    def test_new_members_work_but_departure_before_generation_or_post_is_denied(self):
+        self.queue("left-before-generation")
+        self.slack.pages[""]["members"].remove("UTESTHUMAN")
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls, [])
+        self.slack.pages[""]["members"].append("UTESTHUMAN")
+        self.queue(user="UTESTNEW")
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls, [])
+        self.slack.pages[""]["members"].append("UTESTNEW")
+        self.queue("chat-new", user="UTESTNEW")
+        self.coordinator.during_query = lambda: self.slack.pages[""]["members"].remove("UTESTNEW")
+        self.bridge.work_once()
+        self.assertEqual(len(self.coordinator.calls), 1)
+        self.assertEqual(self.slack.sent, [])
+        self.assertEqual(self.store.chat_turn("chat-new")["state"], "rejected")
+        self.assertIsNone(self.store.chat_turn("chat-new")["reply"])
+
+    def test_late_page_rate_limit_prevents_generation_and_unauthorized_error_post(self):
+        limited = RuntimeError(SENTINEL)
+        limited.response = SimpleNamespace(status_code=429)
+        self.slack.pages = {
+            "": {"ok": True, "members": ["UTESTHUMAN", "UTESTBOT"],
+                 "response_metadata": {"next_cursor": "page-2"}},
+            "page-2": limited,
+        }
+        self.queue()
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls, [])
+        self.assertEqual(self.slack.sent, [])
+        self.assertIsNone(self.store.chat_turn("chat-1")["prompt"])
+
+    def test_history_is_same_thread_recent_sent_pairs_with_three_pair_budget(self):
+        for index in range(5):
+            self.queue("chat-" + str(index), "question-" + str(index))
+            self.bridge.work_once()
+        history = self.coordinator.calls[-1][1]
+        self.assertEqual(len(history), 6)
+        self.assertEqual([m["content"] for m in history[::2]],
+                         ["question-1", "question-2", "question-3"])
+        self.queue("chat-other-thread", thread="1700000002.000001")
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls[-1][1], [])
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM events").fetchone()[0], 0)
+
+    def test_history_character_and_utf8_budgets_skip_oversized_whole_pairs(self):
+        self.coordinator.reply = "\U0001f642" * 3000
+        self.queue("large-pair", "x" * 4000)
+        self.bridge.work_once()
+        self.coordinator.reply = "\U0001f642" * 999
+        for index in range(2):
+            self.queue("budget-" + str(index), "\U0001f642" * 2000)
+            self.bridge.work_once()
+        self.queue("budget-final", "A short final query")
+        self.bridge.work_once()
+        history = self.coordinator.calls[-1][1]
+        self.assertEqual(len(history), 4)
+        self.assertLessEqual(sum(len(m["content"]) for m in history), 6000)
+        self.assertLessEqual(sum(len(m["content"].encode()) for m in history), 24000)
+        self.assertNotIn("x" * 4000, str(history))
+
+    def test_own_literal_bot_mentions_are_absent_from_query_and_both_history_roles(self):
+        self.coordinator.reply = "Advice mentioning <@UTESTBOT> literally."
+        self.queue("chat-first", "Question with another <@UTESTBOT> literal.")
+        self.bridge.work_once()
+        self.queue("chat-followup", "Followup <@UTESTBOT>")
+        self.bridge.work_once()
+        query, history = self.coordinator.calls[-1]
+        self.assertNotIn("<@UTESTBOT>", query)
+        self.assertNotIn("<@UTESTBOT>", json.dumps(history))
+        self.assertEqual(set(history[0]), {"role", "content"})
+        self.assertEqual(len(history), 2)
+
+    def test_history_drops_all_indirect_context_after_any_sent_contributor_leaves(self):
+        self.slack.pages[""]["members"].append("UTESTNEW")
+        self.queue("chat-original", "Original private context")
+        self.bridge.work_once()
+        self.queue("chat-new", "A response possibly quoting original context", user="UTESTNEW")
+        self.bridge.work_once()
+        self.assertEqual(len(self.coordinator.calls[-1][1]), 2)
+        self.slack.pages[""]["members"].remove("UTESTHUMAN")
+        self.queue("chat-after-departure", "A fresh question", user="UTESTNEW")
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls[-1][1], [])
+
+    def test_history_contributor_departure_during_generation_blocks_publication(self):
+        self.slack.pages[""]["members"].append("UTESTNEW")
+        self.queue()
+        self.bridge.work_once()
+        self.queue("chat-new", user="UTESTNEW")
+        self.coordinator.during_query = lambda: self.slack.pages[""]["members"].remove("UTESTHUMAN")
+        self.bridge.work_once()
+        self.assertEqual(len(self.slack.sent), 1)
+        self.assertEqual(self.store.chat_turn("chat-new")["state"], "rejected")
+
+    def test_older_unselected_contributor_departure_blocks_indirect_quote_publication(self):
+        self.slack.pages[""]["members"].append("UTESTNEW")
+        self.queue("old-b", "OLDER_B_PROMPT_NOT_SELECTED", user="UTESTNEW")
+        self.bridge.work_once()
+        self.coordinator.reply = "Recent A advice indirectly quoting older B private context."
+        for index in range(3):
+            self.queue("recent-a-" + str(index), "Recent A question " + str(index))
+            self.bridge.work_once()
+        history, contributors = self.store.chat_history(
+            THREAD, frozenset(self.slack.pages[""]["members"]), self.now)
+        self.assertEqual(len(history), 6)
+        self.assertNotIn("OLDER_B_PROMPT_NOT_SELECTED", str(history))
+        self.assertTrue(all("older B private context" in message["content"]
+                            for message in history if message["role"] == "assistant"))
+        self.queue("final-a", "A follow-up relying on recent indirect quotes")
+        self.coordinator.during_query = lambda: self.slack.pages[""]["members"].remove("UTESTNEW")
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls[-1][1], history)
+        self.assertEqual(len(self.slack.sent), 4)
+        self.assertEqual(self.store.chat_turn("final-a")["state"], "rejected")
+        self.assertIsNone(self.store.chat_turn("final-a")["prompt"])
+        self.assertIsNone(self.store.chat_turn("final-a")["reply"])
+        self.assertEqual(contributors, frozenset({"UTESTHUMAN", "UTESTNEW"}))
+
+    def test_pending_expiry_and_sent_history_erasure_retain_only_minimal_receipts(self):
+        self.queue("sent", SENTINEL)
+        self.bridge.work_once()
+        self.queue("expired", "PENDING_RAW_SYNTHETIC_TEXT")
+        self.now = 700
+        self.bridge.work_once()
+        self.assertEqual(self.store.chat_turn("expired")["state"], "expired")
+        self.assertIsNone(self.store.chat_turn("expired")["prompt"])
+        self.now = 86500
+        self.bridge.work_once()
+        row = self.store.chat_turn("sent")
+        self.assertEqual(row["state"], "sent")
+        self.assertIsNone(row["prompt"])
+        self.assertIsNone(row["reply"])
+        self.assertIsNotNone(row["attempted"])
+        self.assertNotIn(SENTINEL.encode(), Path(self.config.state_path).read_bytes())
+
+    def test_pending_cap_is_durable_and_rolls_back_an_unqueued_envelope(self):
+        for index in range(20):
+            self.queue("queued-" + str(index))
+        with self.assertRaises(Refused):
+            self.queue("overflow")
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM chat_turns").fetchone()[0], 20)
+        self.assertIsNone(self.store.db.execute(
+            "SELECT 1 FROM envelopes WHERE id='env-overflow'").fetchone())
+        self.assertEqual(self.coordinator.calls, [])
+
+    def test_persistent_per_user_hour_global_hour_and_daily_attempt_caps(self):
+        for count, requester, ago in ((10, "UTESTHUMAN", 1), (30, "UTESTOTHER", 1),
+                                      (100, "UTESTOTHER", 7200)):
+            with self.subTest(count=count):
+                self.now = 10000
+                with self.store.transaction() as db:
+                    db.execute("DELETE FROM chat_turns")
+                    db.execute("DELETE FROM envelopes")
+                    db.execute("DELETE FROM deliveries")
+                    for index in range(count):
+                        db.execute(
+                            "INSERT INTO chat_turns(id,thread,requester,mode,received,state,attempted) "
+                            "VALUES (?,?,?,'conversation',?,'failed',?)",
+                            ("seed-" + str(index), THREAD, requester, self.now - ago, self.now - ago))
+                self.reopen()
+                self.queue("over-limit", SENTINEL)
+                before = len(self.coordinator.calls)
+                self.bridge.work_once()
+                self.assertEqual(len(self.coordinator.calls), before)
+                self.assertEqual(self.store.chat_turn("over-limit")["state"], "rate_limited")
+                self.assertIsNone(self.store.chat_turn("over-limit")["prompt"])
+                self.assertEqual(self.slack.sent[-1]["text"], CHAT_UNAVAILABLE)
+
+    def test_worker_errors_timeouts_and_invalid_replies_are_fixed_not_history(self):
+        for index, error in enumerate((TimeoutError(SENTINEL), RuntimeError(SENTINEL),
+                                       CoordinatorError("rate_limited"))):
+            self.coordinator.error = error
+            event = "failed-" + str(index)
+            self.queue(event, SENTINEL)
+            self.bridge.work_once()
+            row = self.store.chat_turn(event)
+            self.assertEqual(row["state"], "failed")
+            self.assertIsNone(row["prompt"])
+            self.assertIsNone(row["reply"])
+            self.assertEqual(self.slack.sent[-1]["text"], CHAT_UNAVAILABLE)
+            self.assertNotIn(SENTINEL, self.slack.sent[-1]["text"])
+        self.coordinator.error = None
+        self.coordinator.reply = "x" * 3001
+        self.queue("invalid-reply")
+        self.bridge.work_once()
+        self.assertEqual(self.slack.sent[-1]["text"], CHAT_UNAVAILABLE)
+        self.assertEqual(self.store.chat_history(THREAD, {"UTESTHUMAN"}, self.now)[0], [])
+
+    def test_generation_and_publication_crashes_hold_without_model_or_post_replay(self):
+        for index, at_send in enumerate((False, True)):
+            self.coordinator.error = None if at_send else Crash()
+            self.slack.send_error = Crash() if at_send else None
+            event = "crash-" + str(index)
+            p = self.queue(event)
+            with self.assertRaises(Crash):
+                self.bridge.work_once()
+            self.assertEqual(self.store.chat_turn(event)["state"], "generating")
+            self.assertIsNone(self.store.chat_turn(event)["prompt"])
+            calls, sends = len(self.coordinator.calls), len(self.slack.sent)
+            self.reopen()
+            self.coordinator.error, self.slack.send_error = None, None
+            self.bridge.accept("replay-" + str(index), p)
+            self.bridge.work_once()
+            self.assertEqual(self.store.chat_turn(event)["state"], "uncertain")
+            self.assertEqual(len(self.coordinator.calls), calls)
+            self.assertEqual(len(self.slack.sent), sends)
+            self.assertIsNone(self.store.chat_turn(event)["reply"])
+
+    def test_ambiguous_slack_post_never_retries_or_retains_model_reply(self):
+        self.slack.send_error = TimeoutError(SENTINEL)
+        p = self.queue()
+        self.bridge.work_once()
+        self.assertEqual(self.store.chat_turn("chat-1")["state"], "uncertain")
+        self.assertIsNone(self.store.chat_turn("chat-1")["reply"])
+        self.reopen()
+        self.bridge.accept("another-envelope", p)
+        self.bridge.work_once()
+        self.assertEqual(len(self.coordinator.calls), 1)
+        self.assertEqual(len(self.slack.sent), 1)
+
+    def test_shared_event_dedupe_and_upgrade_preserve_legacy_proposals_and_receipts(self):
+        legacy = replace(self.config, interaction_mode="proposal", coordinator_socket="")
+        self.store.accept("legacy-envelope", "legacy-event", THREAD, "UTESTHUMAN", SENTINEL, self.now)
+        self.store.begin_create(THREAD)
+        self.store.created(THREAD, Issue(ISSUE_ID, "TEST-5"))
+        self.store.finish_event("legacy-event")
+        self.store.begin_delivery("event:legacy-event", THREAD)
+        self.store.delivery_finished("event:legacy-event", "sent")
+        self.store.stop_polling(THREAD)
+        self.store.bind(legacy)  # Interaction capability is not an access-policy rebind.
+        tables = ("events", "proposals", "deliveries", "binding", "envelopes")
+        before = {table: [tuple(r) for r in self.store.db.execute("SELECT * FROM " + table)]
+                  for table in tables}
+        with self.store.transaction() as db:
+            db.execute("DROP TABLE chat_turns")  # Synthetic pre-conversation schema.
+        self.reopen()
+        self.bridge.work_once()
+        self.assertEqual(self.coordinator.calls, [])
+        for table in tables:
+            self.assertEqual([tuple(r) for r in self.store.db.execute("SELECT * FROM " + table)],
+                             before[table])
+        self.queue("legacy-event")
+        self.assertIsNone(self.store.chat_turn("legacy-event"))
+        self.queue("chat-event")
+        self.store.accept("task-envelope", "chat-event", "1700000002.000001",
+                          "UTESTHUMAN", "task: duplicate event", self.now)
+        self.assertIsNone(self.store.proposal("1700000002.000001"))
+        self.bridge.work_once()
+        self.assertEqual(len(self.coordinator.calls), 1)
+        self.assertIn("Synthetic coordinator advice", self.slack.sent[-1]["text"])
+        self.assertNotIn("already has a proposal", self.slack.sent[-1]["text"])
+        self.assertEqual(self.store.proposal(THREAD)["issue_identifier"], "TEST-5")
+        self.assertEqual(self.paperclip.created, [])
+
+    def test_mode_downgrade_does_not_reinterpret_or_run_pending_chat(self):
+        self.queue()
+        self.bridge = Bridge(replace(self.config, interaction_mode="proposal", coordinator_socket=""),
+                             self.store, self.slack, self.paperclip, clock=lambda: self.now)
+        self.bridge.work_once()
+        self.assertEqual(self.store.chat_turn("chat-1")["state"], "rejected")
+        self.assertEqual(self.coordinator.calls, [])
+        self.assertEqual(self.paperclip.created, [])
+
+
+class CoordinatorProtocolTests(unittest.TestCase):
+    class Transport:
+        def __init__(self, response):
+            self.response, self.sent, self.connected = response, [], []
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def settimeout(self, value):
+            assert 0 < value <= 120
+        def connect(self, path):
+            self.connected.append(path)
+        def sendall(self, data):
+            self.sent.append(data)
+        def recv(self, count):
+            data, self.response = self.response[:count], self.response[count:]
+            return data
+
+    def client(self, response):
+        transport = self.Transport(response)
+        return Coordinator("/run/approval-test.sock"), transport
+
+    def test_exact_bounded_ndjson_uses_only_one_unix_connection(self):
+        client, transport = self.client(
+            b'{"version":1,"ok":true,"text":"A synthetic answer"}\n')
+        history = [{"role": "user", "content": "Earlier"}, {"role": "assistant", "content": "Draft"}]
+        with patch.object(client, "check"), \
+                patch.object(socket, "socket", return_value=transport) as factory:
+            self.assertEqual(client.query("Question", history), "A synthetic answer")
+        factory.assert_called_once_with(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.assertEqual(transport.connected, ["/run/approval-test.sock"])
+        self.assertEqual(json.loads(transport.sent[0]),
+                         {"version": 1, "text": "Question", "history": history})
+        self.assertTrue(transport.sent[0].endswith(b"\n"))
+        self.assertLessEqual(len(transport.sent[0]), 65536)
+
+    def test_request_validation_rejects_bad_or_oversized_history_before_connect(self):
+        invalid = [
+            ("", []), ("x" * 4097, []), ("\x00", []), ("\ud800", []),
+            ("Question", [{"role": "user", "content": "Unpaired"}]),
+            ("Question", [{"role": "assistant", "content": "Wrong first"},
+                          {"role": "user", "content": "Wrong second"}]),
+            ("Question", [{"role": "user", "content": "x" * 3001},
+                          {"role": "assistant", "content": "x" * 3000}]),
+            ("Question", [{"role": "user", "content": "x", "extra": True},
+                          {"role": "assistant", "content": "x"}]),
+            ("Question", [{"role": "user" if i % 2 == 0 else "assistant", "content": "x"}
+                          for i in range(8)]),
+        ]
+        client = Coordinator("/run/approval-test.sock")
+        with patch.object(socket, "socket", side_effect=network_forbidden) as factory:
+            for text, history in invalid:
+                with self.subTest(text=text), self.assertRaises(CoordinatorError):
+                    client.query(text, history)
+        factory.assert_not_called()
+
+    def test_strict_response_schema_duplicate_keys_utf8_and_wire_bounds(self):
+        invalid = [
+            b'{"version":true,"ok":true,"text":"bad"}\n',
+            b'{"version":1,"ok":1,"text":"bad"}\n',
+            b'{"version":1,"ok":true,"text":"bad","thread":"other"}\n',
+            b'{"version":1,"version":1,"ok":true,"text":"bad"}\n',
+            b'{"version":1,"ok":true,"text":"bad"}',
+            b'{"version":1,"ok":true,"text":"bad"}\n{}\n',
+            b'{"version":1,"ok":true,"text":"\\ud800"}\n',
+            b'\xff\n', b'x' * 65536 + b'\n',
+            json.dumps({"version": 1, "ok": True, "text": "x" * 3001}).encode() + b"\n",
+        ]
+        for response in invalid:
+            client, transport = self.client(response)
+            with self.subTest(size=len(response)), patch.object(client, "check"), \
+                    patch.object(socket, "socket", return_value=transport), \
+                    self.assertRaises(CoordinatorError):
+                client.query("Question", [])
+
+    def test_wire_limit_includes_newline_and_unicode_response_bound_is_not_truncated(self):
+        line = b'{"version":1,"ok":true,"text":"Answer"}'
+        maximum = line + b" " * (65535 - len(line)) + b"\n"
+        client, transport = self.client(maximum)
+        with patch.object(client, "check"), patch.object(socket, "socket", return_value=transport):
+            self.assertEqual(client.query("Question", []), "Answer")
+        response = json.dumps({"version": 1, "ok": True, "text": "\U0001f642" * 3000},
+                              ensure_ascii=False).encode() + b"\n"
+        client, transport = self.client(response)
+        with patch.object(client, "check"), patch.object(socket, "socket", return_value=transport):
+            self.assertEqual(len(client.query("Question", []).encode()), 12000)
+        client, transport = self.client(b"")
+        with patch.object(client, "check"), patch.object(socket, "socket", return_value=transport), \
+                patch("test_approval_bridge.coordinator.time.monotonic", side_effect=[0, 0, 121]), \
+                self.assertRaises(CoordinatorError) as error:
+            client.query("Question", [])
+        self.assertEqual(error.exception.code, "timeout")
+        self.assertEqual(len(transport.sent), 1)
+
+    def test_only_fixed_worker_errors_are_retained_and_timeout_has_no_retry(self):
+        for code in ("invalid_request", "rate_limited", "timeout", "unavailable", "generation_failed",
+                     SENTINEL + "\nprivate", {"raw": SENTINEL}):
+            client, transport = self.client(
+                json.dumps({"version": 1, "ok": False, "error": code}).encode() + b"\n")
+            with patch.object(client, "check"), patch.object(socket, "socket", return_value=transport), \
+                    self.assertRaises(CoordinatorError) as error:
+                client.query("Question", [])
+            self.assertNotIn(SENTINEL, str(error.exception))
+            self.assertEqual(len(transport.sent), 1)
+        client, transport = self.client(b"")
+        with patch.object(client, "check"), patch.object(socket, "socket", return_value=transport), \
+                patch.object(transport, "recv", side_effect=TimeoutError(SENTINEL)), \
+                self.assertRaises(CoordinatorError) as error:
+            client.query("Question", [])
+        self.assertEqual(error.exception.code, "timeout")
+        self.assertEqual(len(transport.sent), 1)
+
+    def test_stat_only_socket_and_parent_permissions_refuse_symlinks_or_mutable_ownership(self):
+        safe = {
+            "/": SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+            "/run": SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+            "/run/approval-test.sock": SimpleNamespace(
+                st_mode=stat.S_IFSOCK | 0o660, st_uid=0, st_gid=os.getegid()),
+        }
+        client = Coordinator("/run/approval-test.sock")
+        with patch.object(Path, "lstat", lambda path: safe[str(path)]), \
+                patch.object(socket, "socket", side_effect=network_forbidden) as factory:
+            client.check()
+        factory.assert_not_called()
+        for path, info in (
+                ("/run", SimpleNamespace(st_mode=stat.S_IFDIR | 0o775, st_uid=0)),
+                ("/run", SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=1001)),
+                ("/run", SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=0)),
+                ("/run/approval-test.sock", SimpleNamespace(
+                    st_mode=stat.S_IFSOCK | 0o660, st_uid=1001, st_gid=os.getegid())),
+                ("/run/approval-test.sock", SimpleNamespace(
+                    st_mode=stat.S_IFSOCK | 0o660, st_uid=0, st_gid=os.getegid() + 1)),
+                ("/run/approval-test.sock", SimpleNamespace(
+                    st_mode=stat.S_IFSOCK | 0o666, st_uid=0, st_gid=os.getegid())),
+                ("/run/approval-test.sock", SimpleNamespace(
+                    st_mode=stat.S_IFLNK | 0o660, st_uid=0, st_gid=os.getegid()))):
+            invalid = {**safe, path: info}
+            with self.subTest(path=path), \
+                    patch.object(Path, "lstat", lambda p: invalid[str(p)]), \
+                    self.assertRaises(CoordinatorError):
+                client.check()
+
+
 class EntrypointTests(unittest.TestCase):
+    def test_interaction_defaults_and_socket_configuration_are_strict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = config_data(directory)
+            legacy = Config.parse(data)
+            self.assertEqual((legacy.interaction_mode, legacy.coordinator_socket), ("proposal", ""))
+            self.assertEqual(legacy, Config.parse({
+                **data, "interaction_mode": "proposal", "coordinator_socket": "",
+            }))
+            self.assertEqual(Config.parse({
+                **data, "interaction_mode": "conversation", "coordinator_socket": "/run/example.sock",
+            }).interaction_mode, "conversation")
+            for change in (
+                    {"interaction_mode": "other"}, {"interaction_mode": None},
+                    {"interaction_mode": []}, {"coordinator_socket": "/run/example.sock"},
+                    {"interaction_mode": "conversation"},
+                    {"interaction_mode": "conversation", "coordinator_socket": "../example.sock"},
+                    {"interaction_mode": "conversation", "coordinator_socket": "/run/../example.sock"},
+                    {"interaction_mode": "conversation", "coordinator_socket": "/run/link//sock"},
+                    {"interaction_mode": "conversation", "coordinator_socket": "/run/example.sock\n"},
+                    {"interaction_mode": "conversation", "coordinator_socket": "/run/" + "x" * 108}):
+                with self.subTest(change=change), self.assertRaises(Refused):
+                    Config.parse({**data, **change})
+
+    def test_conversation_preflight_only_stats_socket_and_never_invokes_model(self):
+        coordinator = SimpleNamespace(check=lambda: None, query=network_forbidden)
+        with patch.object(entry, "Coordinator", return_value=coordinator) as factory, \
+                patch.object(coordinator, "check", wraps=coordinator.check) as check:
+            self.assertEqual(self.invoke_preflight(config_change={
+                "interaction_mode": "conversation", "coordinator_socket": "/run/approval-test.sock",
+            }), (0, "preflight_ok_read_only\n", ""))
+        factory.assert_called_once_with("/run/approval-test.sock")
+        check.assert_called_once_with()
+
     def test_access_mode_is_optional_and_rejects_ambiguous_or_malformed_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             data = config_data(directory)

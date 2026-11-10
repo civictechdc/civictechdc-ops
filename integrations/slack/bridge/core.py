@@ -1,13 +1,18 @@
 """Mention-only intake, authorization gates, and fixed notifications.
 
-Slack and Paperclip clients are explicit constructor arguments, not plugins.
-No model, shell, agent, comment, file, search, or history interfaces exist here.
+Transport clients are explicit constructor arguments, not plugins. Conversation
+mode uses only bounded Unix RPC to a separately restricted coordinator.
 """
 
+import html
 import re
 import time
 
 from .config import Refused, identifier
+from .coordinator import bounded_text
+
+DRAFT_SUFFIX = "\n\nDraft/advice only; no work executed."
+CHAT_UNAVAILABLE = "I couldn't safely complete that reply. Please try a new mention later." + DRAFT_SUFFIX
 
 
 class RateLimited(Exception):
@@ -63,8 +68,10 @@ class Gate:
         if (not identifier(requester, "[UW]") or requester == c.bot_user_id
                 or (c.access_mode == "allowlist" and requester not in c.allowed_user_ids)):
             raise Refused("slack_member_not_allowed")
-        if requester not in self.snapshot():
+        members = self.snapshot()
+        if requester not in members:
             raise Refused("slack_requester_not_member")
+        return members
 
     def _read(self, method, unavailable, invalid, **kwargs):
         try:
@@ -153,9 +160,10 @@ class Gate:
 
 
 class Bridge:
-    def __init__(self, config, store, slack, paperclip, clock=time.time):
+    def __init__(self, config, store, slack, paperclip, clock=time.time, coordinator=None):
         self.config, self.store, self.slack, self.paperclip = config, store, slack, paperclip
         self.gate, self.clock = Gate(config, slack), clock
+        self.coordinator = coordinator
         store.bind(config)
 
     def accept(self, envelope_id, payload):
@@ -166,7 +174,8 @@ class Bridge:
         """
         c = self.config
         if (not isinstance(payload, dict) or not c.integration_approved
-                or c.access_mode not in ("allowlist", "channel_members")):
+                or c.access_mode not in ("allowlist", "channel_members")
+                or c.interaction_mode not in ("proposal", "conversation")):
             return
         e = payload.get("event")
         if (payload.get("type") != "event_callback"
@@ -207,23 +216,30 @@ class Bridge:
                 or not isinstance(thread, str)
                 or not re.fullmatch(r"\d{10,16}\.\d{6}", thread)):
             return
-        self.store.accept(envelope_id, event_id, thread, e["user"], text, self.clock())
+        after_mention = text.split(f"<@{c.bot_user_id}>", 1)[1].lstrip()
+        if c.interaction_mode == "conversation" and not after_mention.startswith("task:"):
+            prompt = text.replace(f"<@{c.bot_user_id}>", "").strip()
+            self.store.accept_chat(envelope_id, event_id, thread, e["user"], prompt, self.clock())
+        else:
+            self.store.accept(envelope_id, event_id, thread, e["user"], text, self.clock())
 
-    def _send(self, key, proposal, requester, text, terminal=False):
+    def _send(self, key, proposal, requester, text, terminal=False, contributors=frozenset()):
         # A spent receipt causes no action, so needs no external authorization
         # calls. Every actual publication still gets a fresh complete gate.
         if self.store.has_delivery(key):
             if terminal:
                 self.store.stop_polling(proposal["thread"])
             return
-        self.gate.check(requester)
+        members = self.gate.check(requester)
+        if not contributors <= members:
+            raise Refused("slack_requester_not_member")
         if not self.store.begin_delivery(key, proposal["thread"], terminal):
             return
         try:
             reply = self.slack.chat_postMessage(
                 channel=self.config.channel_id, thread_ts=proposal["thread"],
                 text=text, mrkdwn=False, parse="none", unfurl_links=False,
-                unfurl_media=False,
+                unfurl_media=False, link_names=False,
             )
             # A truncated/odd response is not proof of failure. Hold, don't retry.
             if (reply.get("ok") is not True
@@ -239,9 +255,10 @@ class Bridge:
 
     def work_once(self):
         self.store.expire_pending(self.clock())
+        self.store.expire_chats(self.clock())
         event = self.store.pending_event()
         if event is None:
-            return False
+            return self._work_chat()
         p = self.store.proposal(event["thread"])
         if event["kind"] == "initial" and p["state"] == "pending":
             if self.clock() - p["received"] >= 3600:
@@ -280,8 +297,62 @@ class Bridge:
         self.store.finish_event(event["id"])
         return True
 
+    def _chat_notice(self, turn):
+        try:
+            self._send("chat:" + turn["id"], turn, turn["requester"], CHAT_UNAVAILABLE)
+        except Refused:
+            pass
+
+    def _work_chat(self):
+        turn = self.store.pending_chat()
+        if turn is None:
+            return False
+        if (self.config.interaction_mode != "conversation" or self.coordinator is None
+                or turn["mode"] != "conversation"):
+            self.store.finish_chat(turn["id"], "rejected")
+            return True
+        try:
+            members = self.gate.check(turn["requester"])
+        except Refused:
+            self.store.finish_chat(turn["id"], "rejected")
+            return True
+        prompt = turn["prompt"]
+        if isinstance(prompt, str):
+            prompt = prompt.replace(f"<@{self.config.bot_user_id}>", "").strip()
+        if not bounded_text(prompt, 4096, 16384):
+            self.store.finish_chat(turn["id"], "failed")
+            self._chat_notice(turn)
+            return True
+        history, contributors = self.store.chat_history(
+            turn["thread"], members, self.clock(), f"<@{self.config.bot_user_id}>")
+        ready = self.store.begin_chat(turn["id"], self.clock())
+        if ready is None:
+            if self.store.chat_turn(turn["id"])["state"] == "rate_limited":
+                self._chat_notice(turn)
+            return True
+        try:
+            reply = self.coordinator.query(prompt, history)
+            if not bounded_text(reply, 3000, 12000):
+                raise Refused()
+        except Exception:
+            self.store.finish_chat(turn["id"], "failed")
+            self._chat_notice(turn)
+            return True
+        try:
+            self._send("chat:" + turn["id"], turn, turn["requester"],
+                       html.escape(reply, quote=False) + DRAFT_SUFFIX, contributors=contributors)
+        except Refused:
+            self.store.finish_chat(turn["id"], "rejected")
+        else:
+            if self.store.delivery_state("chat:" + turn["id"]) == "sent":
+                self.store.chat_sent(turn["id"], prompt, reply, self.clock())
+            else:
+                self.store.finish_chat(turn["id"], "uncertain")
+        return True
+
     def poll_statuses(self):
         self.store.expire_pending(self.clock())
+        self.store.expire_chats(self.clock())
         proposals = self.store.poll_batch()
         if not proposals:
             return
@@ -293,6 +364,7 @@ class Bridge:
             return
         for p in proposals:
             self.store.expire_pending(self.clock())
+            self.store.expire_chats(self.clock())
             if p["requester"] not in members:
                 continue
             try:

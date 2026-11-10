@@ -30,6 +30,13 @@ def identifier(value, prefix):
     return isinstance(value, str) and re.fullmatch(prefix + r"[A-Z0-9]{2,63}", value)
 
 
+def socket_path(value):
+    return (isinstance(value, str) and value.startswith("/") and not value.endswith("/")
+            and len(value.encode("utf-8")) <= 107
+            and all(part not in ("", ".", "..") for part in value.split("/")[1:])
+            and all(32 < ord(ch) < 127 for ch in value))
+
+
 def base_url(value, api=False):
     if (not isinstance(value, str)
             or any(ord(ch) <= 32 or ord(ch) >= 127 for ch in value)
@@ -68,15 +75,25 @@ class Config:
     poll_interval_seconds: int
     integration_approved: bool
     access_mode: str = "allowlist"
+    interaction_mode: str = "proposal"
+    coordinator_socket: str = ""
 
     @classmethod
     def parse(cls, data):
         try:
-            required = set(cls.__dataclass_fields__) - {"access_mode"}
-            if not required <= set(data) or set(data) - required - {"access_mode"}:
+            optional = {"access_mode", "interaction_mode", "coordinator_socket"}
+            required = set(cls.__dataclass_fields__) - optional
+            if not required <= set(data) or set(data) - required - optional:
                 raise Refused()
             mode = data.get("access_mode", "allowlist")
             if type(mode) is not str or mode not in ("allowlist", "channel_members"):
+                raise Refused()
+            interaction = data.get("interaction_mode", "proposal")
+            coordinator = data.get("coordinator_socket", "")
+            if type(interaction) is not str or interaction not in ("proposal", "conversation"):
+                raise Refused()
+            if ((interaction == "proposal" and coordinator != "")
+                    or (interaction == "conversation" and not socket_path(coordinator))):
                 raise Refused()
             for key, prefix in (("workspace_id", "T"), ("app_id", "A"),
                                 ("bot_user_id", "[UW]"), ("bot_id", "B"),
@@ -113,6 +130,7 @@ class Config:
                 paperclip_public_url=base_url(data["paperclip_public_url"]),
                 state_path=data["state_path"], poll_interval_seconds=interval,
                 integration_approved=True, access_mode=mode,
+                interaction_mode=interaction, coordinator_socket=coordinator,
             )
         except (ValueError, TypeError, KeyError, AttributeError):
             raise Refused() from None

@@ -1,4 +1,4 @@
-"""Small durable state machine; no raw Slack payloads or API responses."""
+"""Durable proposal/chat states; never raw Slack or provider payloads."""
 
 from contextlib import contextmanager
 import os
@@ -49,6 +49,13 @@ class Store:
                 id TEXT PRIMARY KEY, thread TEXT NOT NULL, state TEXT NOT NULL,
                 retry_after INTEGER
             );
+            CREATE TABLE IF NOT EXISTS chat_turns (
+                id TEXT PRIMARY KEY, thread TEXT NOT NULL, requester TEXT NOT NULL,
+                mode TEXT NOT NULL CHECK(mode='conversation'),
+                received REAL NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+                prompt TEXT, reply TEXT, attempted REAL, sent REAL
+            );
+            CREATE INDEX IF NOT EXISTS chat_attempts ON chat_turns(attempted,requester);
         """)
         self.db.commit()
 
@@ -85,13 +92,20 @@ class Store:
             db.execute("UPDATE proposals SET state='uncertain',text=NULL "
                        "WHERE state='creating'")
             db.execute("UPDATE deliveries SET state='uncertain' WHERE state='sending'")
+            db.execute("UPDATE chat_turns SET state='uncertain',prompt=NULL,reply=NULL "
+                       "WHERE state='generating'")
+
+    def _seen_event(self, db, event):
+        return db.execute(
+            "SELECT 1 FROM events WHERE id=? UNION ALL "
+            "SELECT 1 FROM chat_turns WHERE id=? LIMIT 1", (event, event)).fetchone() is not None
 
     def accept(self, envelope, event, thread, requester, text, now):
         with self.transaction() as db:
             if db.execute("SELECT 1 FROM envelopes WHERE id=?", (envelope,)).fetchone():
                 return
             db.execute("INSERT INTO envelopes VALUES (?)", (envelope,))
-            if db.execute("SELECT 1 FROM events WHERE id=?", (event,)).fetchone():
+            if self._seen_event(db, event):
                 return
             pending = db.execute(
                 "SELECT count(*) FROM events WHERE state='pending'").fetchone()[0]
@@ -107,6 +121,107 @@ class Store:
                     (thread, requester, text, now))
             db.execute("INSERT INTO events(id,thread,requester,kind) VALUES (?,?,?,?)",
                        (event, thread, requester, "reference" if known else "initial"))
+
+    def accept_chat(self, envelope, event, thread, requester, prompt, now):
+        with self.transaction() as db:
+            if db.execute("SELECT 1 FROM envelopes WHERE id=?", (envelope,)).fetchone():
+                return
+            db.execute("INSERT INTO envelopes VALUES (?)", (envelope,))
+            if self._seen_event(db, event):
+                return
+            pending = db.execute(
+                "SELECT count(*) FROM chat_turns WHERE state='pending'").fetchone()[0]
+            if pending >= 20:
+                raise Refused()
+            db.execute(
+                "INSERT INTO chat_turns(id,thread,requester,mode,received,prompt) "
+                "VALUES (?,?,?,'conversation',?,?)", (event, thread, requester, now, prompt))
+
+    def pending_chat(self):
+        with self.lock:
+            return self.db.execute(
+                "SELECT * FROM chat_turns WHERE state='pending' ORDER BY rowid LIMIT 1").fetchone()
+
+    def chat_turn(self, event):
+        with self.lock:
+            return self.db.execute("SELECT * FROM chat_turns WHERE id=?", (event,)).fetchone()
+
+    def expire_chats(self, now):
+        with self.transaction() as db:
+            db.execute("UPDATE chat_turns SET state='expired',prompt=NULL,reply=NULL "
+                       "WHERE state='pending' AND received<=?", (now - 600,))
+            db.execute("UPDATE chat_turns SET prompt=NULL,reply=NULL "
+                       "WHERE sent<=? AND (prompt IS NOT NULL OR reply IS NOT NULL)",
+                       (now - 86400,))
+
+    def begin_chat(self, event, now):
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM chat_turns WHERE id=? AND state='pending'",
+                             (event,)).fetchone()
+            if row is None:
+                return None
+            if row["received"] <= now - 600:
+                db.execute("UPDATE chat_turns SET state='expired',prompt=NULL WHERE id=?", (event,))
+                return None
+            hourly = db.execute(
+                "SELECT count(*) FROM chat_turns WHERE attempted>?", (now - 3600,)).fetchone()[0]
+            daily = db.execute(
+                "SELECT count(*) FROM chat_turns WHERE attempted>?", (now - 86400,)).fetchone()[0]
+            personal = db.execute(
+                "SELECT count(*) FROM chat_turns WHERE requester=? AND attempted>?",
+                (row["requester"], now - 3600)).fetchone()[0]
+            if personal >= 10 or hourly >= 30 or daily >= 100:
+                db.execute("UPDATE chat_turns SET state='rate_limited',prompt=NULL WHERE id=?",
+                           (event,))
+                return None
+            # Commit an attempt before RPC. Raw request is now memory-only until
+            # a confirmed SENT reply qualifies the pair for temporary history.
+            db.execute("UPDATE chat_turns SET state='generating',prompt=NULL,attempted=? WHERE id=?",
+                       (now, event))
+            return row
+
+    def finish_chat(self, event, state):
+        with self.transaction() as db:
+            db.execute("UPDATE chat_turns SET state=?,prompt=NULL,reply=NULL "
+                       "WHERE id=? AND state!='sent'", (state, event))
+
+    def chat_sent(self, event, prompt, reply, now):
+        with self.transaction() as db:
+            db.execute("UPDATE chat_turns SET state='sent',prompt=?,reply=?,sent=? "
+                       "WHERE id=? AND state='generating' AND EXISTS "
+                       "(SELECT 1 FROM deliveries WHERE id=? AND state='sent')",
+                       (prompt, reply, now, event, "chat:" + event))
+
+    def chat_history(self, thread, members, now, own_mention=""):
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT * FROM chat_turns WHERE thread=? AND state='sent' AND sent>? "
+                "ORDER BY sent DESC,rowid DESC", (thread, now - 86400)).fetchall()
+        # Later replies may quote earlier contributors: if ANY unexpired SENT
+        # contributor departed, do not replay even indirectly derived history.
+        contributors = frozenset(row["requester"] for row in rows)
+        if not contributors <= members:
+            return [], frozenset()
+        # Fence publication with the SAME full set, including contributors of
+        # older/oversized pairs omitted from the bounded RPC history.
+        pairs, chars, size = [], 0, 0
+        for row in rows:
+            if not isinstance(row["prompt"], str) or not isinstance(row["reply"], str):
+                continue
+            prompt = row["prompt"].replace(own_mention, "").strip() if own_mention else row["prompt"]
+            reply = row["reply"].replace(own_mention, "").strip() if own_mention else row["reply"]
+            if not prompt or not reply:
+                continue
+            pair_chars = len(prompt) + len(reply)
+            pair_size = len((prompt + reply).encode("utf-8"))
+            if chars + pair_chars > 6000 or size + pair_size > 24000:
+                continue
+            pairs.append([{"role": "user", "content": prompt},
+                          {"role": "assistant", "content": reply}])
+            chars, size = chars + pair_chars, size + pair_size
+            if len(pairs) == 3:
+                break
+        return [message for pair in reversed(pairs) for message in pair], contributors
 
     def pending_event(self):
         with self.lock:
@@ -176,6 +291,11 @@ class Store:
         with self.lock:
             return self.db.execute(
                 "SELECT 1 FROM deliveries WHERE id=?", (key,)).fetchone() is not None
+
+    def delivery_state(self, key):
+        with self.lock:
+            row = self.db.execute("SELECT state FROM deliveries WHERE id=?", (key,)).fetchone()
+            return row["state"] if row is not None else None
 
     def begin_delivery(self, key, thread, terminal=False):
         with self.transaction() as db:

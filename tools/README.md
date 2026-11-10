@@ -15,8 +15,9 @@ credential store, or live inventory of connected accounts.
   dry-run by default, with isolated offline tests. Live account access is
   unqualified and requires separate authorization.
 - [Slack integration](../integrations/slack/README.md) — experimental private
-  proposal-intake bridge, access boundaries, and setup references; live Slack
-  access unqualified and broader chat/email assistance still proposed.
+  proposal bridge with opt-in conversational routing, access boundaries, and
+  setup references. Restricted worker deployment and live checks are separate;
+  email remains proposed.
 
 Keep service-specific code, safe configuration examples, and tests together
 under `integrations/<service>/`. Tool guides should link there rather than

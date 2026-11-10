@@ -1,6 +1,6 @@
 # Resource catalog
 
-The front door to Civic Tech DC's support library. Updated November 5, 2026.
+The front door to Civic Tech DC's support library. Updated November 10, 2026.
 Status describes the resource, not permission to perform an external action.
 The resource itself contains its scope, sources, and approval requirements.
 
@@ -11,7 +11,7 @@ The resource itself contains its scope, sources, and approval requirements.
 | [Orchestration pattern](tools/orchestration.md) | Tool guide | Reference; deployment-specific | Understanding the roles of the task board, assistant/worker, and shared library. |
 | [Hermes operator console](integrations/hermes/README.md) | Integration/tool guide | Optional private-admin reference | Separating operator chat/administration from managed tasks and volunteer-facing services. |
 | [Luma helper](integrations/luma/README.md) | Integration/tool | Experimental; live account unqualified | Previewing read requests and, with separate authorization, reading limited event data. |
-| [Slack integration](integrations/slack/README.md) | Integration/workflow | Experimental proposal bridge; live access unqualified | Queuing private, unassigned requests for organizer review; planning broader support and email alerts separately. |
+| [Slack integration](integrations/slack/README.md) | Integration/workflow | Experimental proposal bridge + opt-in conversational routing; worker deployment qualified separately | Bounded thread replies and explicit private task proposals; no automatic Engineer execution or email access. |
 | [Email reply alerts](workflows/email-reply-alerts.md) | Workflow | Proposal; no mailbox or sending enabled | Flagging relevant email in a restricted Slack channel with a draft reply for human review. |
 | [Email reply alert layout](templates/email-reply-alert.md) | Template | Draft; illustrative only | Structuring a private review notice without implying a reply has been sent. |
 | [Project brief](templates/project-brief.md) | Template | Draft | Capturing a problem, users, capacity, and next milestone. |
