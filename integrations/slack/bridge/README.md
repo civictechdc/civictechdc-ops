@@ -89,6 +89,13 @@ guaranteed pure.
    approval. Tell pilot participants what is retained, who can review it, and
    how to disable the bridge. Confirm the receiving private Paperclip owner,
    visibility, and absence of independent execution triggers.
+
+   An existing private coordination channel is supported; a new two-person
+   channel is only an optional small pilot. Explicitly approve every human
+   member's ID, not just the setup operator's. The same allowlist also permits
+   those people to queue proposals. Do not silently approve new members or
+   unexpected apps merely to make validation pass.
+
 2. Review `manifest.json`. Bot scopes are exactly `app_mentions:read`,
    `chat:write`, `groups:read`; bot event exactly `app_mention`. Separately
    create an **app-level** token with `connections:write` (not a bot scope).
