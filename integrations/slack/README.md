@@ -163,11 +163,18 @@ adds a separate trigger: a relevant email, not a Slack mention. After explicit
 setup approval, the bot would post a review notice and proposed reply to the
 designated restricted channel.
 
-The first phase is **notify and draft only**. A human reviews and sends in the
-mail client. It does not save correspondence to this public library, send email,
-or require reading Slack history. An appropriately scoped bot can post to its
-approved channel through the message-posting API; mailbox access and detection
-need a separate connector and provider-specific permission review.
+The proposed workflow supports **notify/draft with manual sending**, or a
+separately enabled **explicit approval-and-send** connector. The latter accepts
+only an authorized reviewer's standalone `@BOT YES` or `@BOT NO` in the exact
+frozen draft's approval thread. Changes require a new draft/thread and fresh
+approval; email or model text cannot authorize sending. Bot chat access is not
+mail-send authority. See the workflow for recipient binding, expiry, thread
+rechecks, and uncertain-send handling.
+
+Neither mode saves correspondence to this public library or needs broad Slack
+history access. An appropriately scoped bot can post to its approved channel
+through the message-posting API; mailbox access, detection, sending, and reviewer
+authorization need a separate connector and provider-specific permission review.
 
 Neither the mailbox connector nor proactive posting workflow is implemented or
 connected by this repository. Use the workflow's decision checklist before

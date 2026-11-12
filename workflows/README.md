@@ -18,8 +18,8 @@ into policy.
   conversational routing to a separately qualified restricted worker, or
   approval-first proposal intake. Neither automatically runs powerful workers.
 - [Email reply alerts](email-reply-alerts.md) — proposed proactive notifications
-  and draft replies in a restricted Slack channel; no mailbox access or
-  automatic sending enabled.
+  and draft replies in a restricted Slack channel, with manual sending or an
+  explicitly approved-send design. No mailbox or sending connector is enabled.
 
 These links point to one canonical copy of each resource. None creates a
 schedule, sends a message, installs a skill, or grants publishing permission.
